@@ -1,0 +1,52 @@
+.viz-root {
+  color-scheme: light;
+  --surface-1: #fcfcfb;
+  --surface-2: #f0efec;
+  --text-primary: #0b0b0b;
+  --text-secondary: #52514e;
+  --grid: #e3e2de;
+  --series-1: #2a78d6;
+  --series-1-hover: #184f95;
+  --playhead: #eb6834;
+}
+@media (prefers-color-scheme: dark) {
+  .viz-root {
+    color-scheme: dark;
+    --surface-1: #1a1a19;
+    --surface-2: #262625;
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --grid: #333331;
+    --series-1: #3987e5;
+    --series-1-hover: #86b6ef;
+    --playhead: #d95926;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--surface-1); }
+.viz-root {
+  max-width: 1200px; margin: 0 auto; padding: 1.5rem;
+  font: 15px/1.45 system-ui, sans-serif; color: var(--text-primary); background: var(--surface-1);
+}
+h1 { margin: 0 0 .25rem; font-size: 1.6rem; }
+h2 { font-size: 1.1rem; margin: 1.5rem 0 .5rem; }
+header p, .hint, #summary { color: var(--text-secondary); margin: .25rem 0; }
+form { display: flex; flex-wrap: wrap; gap: .6rem 1rem; align-items: center; margin-top: 1rem; }
+#url { flex: 1 1 320px; }
+input, button { font: inherit; padding: .4rem .6rem; border: 1px solid var(--grid); border-radius: 6px; background: var(--surface-1); color: inherit; }
+label { display: inline-flex; gap: .4rem; align-items: center; color: var(--text-secondary); }
+label input { width: 5.5rem; }
+button { background: var(--series-1); color: #fff; border-color: transparent; cursor: pointer; }
+button:disabled { opacity: .6; cursor: progress; }
+#status { flex-basis: 100%; min-height: 1.4em; }
+audio { width: 100%; margin: .5rem 0; }
+#chart-wrap { position: relative; height: 420px; }
+#chart { width: 100%; height: 100%; display: block; cursor: crosshair; touch-action: none; }
+#tooltip {
+  position: absolute; pointer-events: none; padding: .35rem .55rem; border-radius: 6px;
+  background: var(--surface-2); color: var(--text-primary); font-size: .85rem; white-space: nowrap;
+  box-shadow: 0 2px 8px rgb(0 0 0 / .2);
+}
+table { border-collapse: collapse; font-variant-numeric: tabular-nums; }
+th, td { padding: .2rem .8rem; text-align: right; border-bottom: 1px solid var(--grid); }
+th { color: var(--text-secondary); font-weight: 600; }

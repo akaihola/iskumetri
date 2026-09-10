@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Iskumetri – drum pyramid beat durations</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main class="viz-root">
+  <header>
+    <h1>Iskumetri</h1>
+    <p>Paste a YouTube video of a drummers' pyramid exercise. Each bar is one stroke: its width spans until the next stroke, its height is that duration in milliseconds.</p>
+  </header>
+
+  <form id="form">
+    <input id="url" type="url" required placeholder="https://www.youtube.com/watch?v=…"
+           value="https://www.youtube.com/watch?v=VojYvzrYsjY" autocomplete="off">
+    <label>Sensitivity <input id="sensitivity" type="number" min="0.2" max="5" step="0.1" value="1"></label>
+    <label>Min gap (ms) <input id="mingap" type="number" min="10" max="500" step="5" value="30"></label>
+    <button id="go" type="submit">Analyze</button>
+    <output id="status" aria-live="polite"></output>
+  </form>
+
+  <section id="result" hidden>
+    <h2 id="title"></h2>
+    <audio id="audio" controls preload="metadata"></audio>
+    <p class="hint">Scroll to zoom · drag to pan · double-click to reset · click a bar to seek</p>
+    <div id="chart-wrap">
+      <canvas id="chart" role="img" aria-label="Bar chart of beat durations over time"></canvas>
+      <div id="tooltip" role="tooltip" hidden></div>
+    </div>
+    <p id="summary"></p>
+    <details>
+      <summary>Table view</summary>
+      <table id="table"><thead><tr><th>#</th><th>Time (s)</th><th>Duration (ms)</th><th>Strokes/min</th></tr></thead><tbody></tbody></table>
+    </details>
+  </section>
+</main>
+<script src="app.js"></script>
+</body>
+</html>
