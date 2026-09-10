@@ -65,7 +65,7 @@ def download(url: str) -> tuple[str, str, Path]:
         if duration > MAX_DURATION:
             raise HTTPException(
                 400,
-                f"Video is {duration // 60} min long; the limit is {MAX_DURATION // 60} min",
+                f"Video is {int(duration) // 60} min long; the limit is {MAX_DURATION // 60} min",
             )
         title = info.get("title") or video_id
         audio = _cached_audio(video_id)
@@ -87,7 +87,11 @@ def api_analyze(req: AnalyzeRequest) -> dict:
     if result_path.exists():
         return json.loads(result_path.read_text())
     result = {"video_id": video_id, "title": title, **analyze(audio, req.sensitivity, req.min_interval)}
-    result_path.write_text(json.dumps(result))
+    # Write then rename, so an interrupted write cannot leave a truncated cache
+    # file that every later request would choke on.
+    tmp = result_path.with_suffix(".partial")
+    tmp.write_text(json.dumps(result))
+    tmp.replace(result_path)
     return result
 
 

@@ -13,7 +13,11 @@ let drag = null;
 const css = (name) => getComputedStyle(document.querySelector(".viz-root")).getPropertyValue(name).trim();
 const fmtTime = (s) => `${Math.floor(s / 60)}:${(s % 60).toFixed(2).padStart(5, "0")}`;
 // Axis ticks land on whole seconds, where hundredths are just noise.
-const fmtClock = (s) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
+// Round to whole seconds *before* splitting, or a tick at 119.9999 renders as "1:60".
+const fmtClock = (s) => {
+  const t = Math.round(s);
+  return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`;
+};
 
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -29,7 +33,7 @@ form.addEventListener("submit", async (e) => {
         min_interval: Number($("mingap").value) / 1000,
       }),
     });
-    if (!res.ok) throw new Error((await res.json()).detail ?? res.statusText);
+    if (!res.ok) throw new Error(await errorText(res));
     show(await res.json());
     status.textContent = "";
   } catch (err) {
@@ -38,6 +42,16 @@ form.addEventListener("submit", async (e) => {
     go.disabled = false;
   }
 });
+
+// FastAPI reports our own failures as a string, but a schema violation as an
+// array of objects; that array used to reach the user as "[object Object]".
+async function errorText(res) {
+  const detail = await res.json().then((body) => body.detail, () => null);
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) return detail.map((d) => d.msg ?? JSON.stringify(d)).join("; ");
+  // statusText is empty over HTTP/2, so lead with the status code.
+  return `HTTP ${res.status}${res.statusText ? " " + res.statusText : ""}`;
+}
 
 function show(d) {
   data = d;
