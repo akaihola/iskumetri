@@ -238,3 +238,11 @@ def test_analyze_velocity_alignment(monkeypatch):
     assert len(result['onsets']) == len(result['velocities'])
     assert len(result['intervals']) == len(result['onsets']) - 1
     assert all(0 <= v <= 1 for v in result['velocities'])
+
+
+def test_auto_tune_keeps_a_quiet_real_stroke_in_a_ramp():
+    strokes = ramp(.4, .12, 40)
+    soft = strokes[20]
+    env = onset_strength(click_track(strokes, duration=12, gains={soft: .05}))
+    found = auto_tune(env)['times']
+    assert all(np.min(abs(found - t)) < .025 for t in strokes)

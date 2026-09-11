@@ -40,7 +40,10 @@ runs are served from `cache/` without touching the network.
 
 - **Scroll** to zoom about the cursor, **drag** to pan, **double-click** to reset.
 - **Hover** a bar for its stroke number, timestamp, duration and strokes per minute.
-- **Click** a bar to seek the audio there, and play along under a moving playhead.
+- **Click** a bar to seek the embedded YouTube video there. Its playback clock drives the chart
+  playhead, including seeks while paused. Reanalyzing the same video preserves
+  playback. YouTube embedding requires network access and may be disabled by
+  the uploader; the chart remains usable if playback fails.
 - **Duration / Tempo** switches the bar height between the gap in milliseconds and
   its reciprocal in strokes per minute. Both come from the time since the previous
   stroke, so either view shows the jitter of every single stroke. The tempo view
@@ -131,6 +134,16 @@ timestamp parameters) hits the same files and needs no network:
 - `<id>.v3.auto.json` or `<id>.v3.s<sensitivity>.w<min gap>.json` — one analysis
   per parameter choice. The version tag changes when the output shape does.
 
+### Reusable stages
+
+`iskumetri.pipeline.fetch(video_id, cache)` downloads audio and caches metadata.
+`iskumetri.onsets.analyze(audio_path, sensitivity, min_interval)` analyzes local
+media without HTTP or storage. `pipeline.load_analysis(path)` and
+`pipeline.save_analysis(path, result)` read and atomically store results.
+`pipeline.analyze_video(url, sensitivity, min_interval, cache)` composes them.
+Either parameter being None selects Auto-tune. Importing the pipeline creates
+no directories; a future CLI can call these functions directly.
+
 ### Audio format
 
 The smallest stream that still gives a reliable analysis is fetched:
@@ -155,6 +168,7 @@ Videos are capped at 20 minutes, and only YouTube URLs are accepted.
 
 ```bash
 uv run pytest
+node --test tests/test_app.cjs
 ```
 
 The tests are offline and need no audio fixtures. To re-check accuracy against a

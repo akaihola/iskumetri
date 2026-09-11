@@ -30,3 +30,32 @@ rejects the former without losing the latter.
 These are signal-based reference observations, not independently annotated
 physical strokes. A smoother chart alone does not prove stroke accuracy.
 Synthetic regressions separately check weak echoes and quiet fast attacks.
+
+
+## Completed checks
+
+- `uv run pytest -q`: 50 passed, including real quiet strokes, slow shadows,
+  fast transitions, short/silent envelopes, velocity alignment, cache keys,
+  description backfill/fallback and HTTP error mapping.
+- `node --test tests/test_app.cjs` passed. Direct execution with
+  `node tests/test_app.cjs` reports all four tests individually.
+- A temporary cache using the real AAC recording produced 243 aligned onsets
+  and velocities; a repeat via another URL form returned the identical cache.
+- Chromium browser checks passed for native spinner clicks, keyboard arrows,
+  typing, re-enabling Auto-tune, light/dark rendering and a 390 px mobile layout.
+  No page JavaScript errors or horizontal page overflow occurred.
+- The real YouTube iframe loaded and played using its Play button. Paused
+  seeking updated the playhead; clicking the chart sought to 14.259 s;
+  reanalyzing the same video preserved exactly that playback position.
+  Browser analysis responses used the precomputed real-audio result fixture.
+- Unit tests cover delayed player readiness, changing the selected video,
+  paused clock updates and API failure status. Embedding remains subject to
+  YouTube availability and uploader permissions.
+- `python3 tools/check_tasks_md.py TASKS.md` passed. The tracker contains no
+  issue entries on this branch or main, so there was no existing issue to move;
+  TASKS.md is unchanged.
+
+Absolute audio/video timing retains the detector's documented roughly 20 ms
+lead and codec-dependent offsets. The player clock is used directly, without
+an arbitrary correction. Physical stroke accuracy beyond the signal comparison
+above has not been independently annotated.
