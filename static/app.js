@@ -1,7 +1,7 @@
 "use strict";
 const $ = (id) => document.getElementById(id);
 const form = $("form"), status = $("status"), go = $("go");
-const canvas = $("chart"), tip = $("tooltip"), audio = $("audio");
+const canvas = $("chart"), tip = $("tooltip");
 const ctx = canvas.getContext("2d");
 const PAD = { l: 56, r: 12, t: 12, b: 32 };
 
@@ -12,6 +12,48 @@ let hover = -1;
 let drag = null;
 let mode = "ms";       // "ms" plots the gap after each stroke, "bpm" its reciprocal
 let smooth = 1;        // strokes per averaging window; 1 draws no average line
+
+let player = null, playerReady = false, playerVideoId = null, playerTime = null;
+let playerLoading = false, playerTimeout;
+
+function cuePlayer() {
+  if (!playerReady || !data || playerVideoId === data.video_id) return;
+  playerVideoId = data.video_id;
+  playerTime = null;
+  $("player-status").textContent = "";
+  player.getIframe().title = data.title;
+  player.cueVideoById(data.video_id);
+}
+function loadPlayer() {
+  if (playerReady) { cuePlayer(); return; }
+  if (playerLoading) return;
+  playerLoading = true;
+  const fail = () => {
+    clearTimeout(playerTimeout);
+    $("player-status").textContent = "YouTube playback is unavailable. The analysis chart is still usable.";
+  };
+  const create = () => {
+    player = new YT.Player("player", {
+      playerVars: { playsinline: 1, origin: window.location.origin },
+      events: {
+        onReady: () => { clearTimeout(playerTimeout); playerReady = true; cuePlayer(); },
+        onStateChange: (event) => {
+          if (event.data === 1) $("player-status").textContent = "";
+          playerTime = player.getCurrentTime();
+          draw();
+        },
+        onError: fail,
+      },
+    });
+  };
+  playerTimeout = setTimeout(fail, 15000);
+  if (window.YT?.Player) { create(); return; }
+  window.onYouTubeIframeAPIReady = create;
+  const script = document.createElement("script");
+  script.src = "https://www.youtube.com/iframe_api";
+  script.onerror = fail;
+  document.head.append(script);
+}
 
 // Height of bar i in the current unit.
 const valueOf = (i) => mode === "ms" ? data.intervals[i] * 1000 : 60 / data.intervals[i];
@@ -95,7 +137,7 @@ function show(d) {
   inferred = new Set(d.inferred);
   $("result").hidden = false;
   $("title").textContent = d.title;
-  if (!audio.src.endsWith(`/api/audio/${d.video_id}`)) audio.src = `/api/audio/${d.video_id}`;
+  loadPlayer();
   resetView();
   const ms = d.intervals.map((x) => x * 1000);
   const seg = d.segment.detected
@@ -223,8 +265,8 @@ function draw() {
     ctx.stroke();
   }
   // playhead
-  if (audio.src && audio.currentTime >= view.t0 && audio.currentTime <= view.t1) {
-    const x = Math.round(xOf(audio.currentTime, b)) + 0.5;
+  if (playerTime !== null && playerTime >= view.t0 && playerTime <= view.t1) {
+    const x = Math.round(xOf(playerTime, b)) + 0.5;
     ctx.strokeStyle = css("--playhead"); ctx.lineWidth = 2;
     ctx.beginPath(); ctx.moveTo(x, b.y); ctx.lineTo(x, b.y + b.h); ctx.stroke();
   }
@@ -283,8 +325,8 @@ canvas.addEventListener("pointermove", (e) => {
   draw();
 });
 canvas.addEventListener("pointerup", (e) => {
-  if (drag && !drag.moved && audio.src) {
-    audio.currentTime = Math.max(0, Math.min(data.duration, tOf(e.offsetX, plotBox())));
+  if (drag && !drag.moved && playerReady) {
+    player.seekTo(Math.max(0, Math.min(data.duration, tOf(e.offsetX, plotBox()))), true);
     draw();
   }
   drag = null;
@@ -293,5 +335,16 @@ canvas.addEventListener("pointerleave", () => { hover = -1; tip.hidden = true; d
 canvas.addEventListener("dblclick", () => data && resetView());
 new ResizeObserver(draw).observe(canvas);
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
-(function tick() { if (data && !audio.paused) draw(); requestAnimationFrame(tick); })();
-audio.addEventListener("seeked", draw);
+// Sample the player's clock even when paused: iframe seeks have no seeked event.
+let lastSample = -Infinity, animation;
+function tick(now) {
+  if (playerReady && data && now - lastSample >= 100) {
+    lastSample = now;
+    const time = player.getCurrentTime();
+    if (time !== playerTime) { playerTime = time; draw(); }
+  }
+  animation = requestAnimationFrame(tick);
+}
+animation = requestAnimationFrame(tick);
+window.addEventListener("pagehide", () => { cancelAnimationFrame(animation); clearTimeout(playerTimeout); });
+window.addEventListener("pageshow", () => { cancelAnimationFrame(animation); animation = requestAnimationFrame(tick); });

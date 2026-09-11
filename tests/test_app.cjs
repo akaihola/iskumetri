@@ -15,7 +15,7 @@ function app() {
   }
   const context = vm.createContext({
     document: { getElementById: element, querySelector: () => ({value: 'ms'}), querySelectorAll: () => [] },
-    window: { location: { origin: 'http://localhost' } },
+    window: { addEventListener() {}, location: { origin: 'http://localhost' } },
     ResizeObserver: class { observe() {} }, matchMedia: () => ({addEventListener() {}}),
     requestAnimationFrame() {}, setTimeout() {}, clearTimeout() {},
   });
@@ -54,4 +54,47 @@ test('centered intervals use elapsed time and actual edge counts', () => {
   assert.equal(a.run('windowed(2,3)'), 20);
   a.run('data = {onsets: [0], intervals: []}');
   assert.ok(Number.isNaN(a.run('windowed(0,2)')));
+});
+
+test('player waits for readiness, retains playback, and follows paused seeks', () => {
+  const a = app();
+  const queued = [], seeks = [];
+  let events, time = 0;
+  const player = {
+    getIframe: () => ({}), cueVideoById: id => queued.push(id),
+    getCurrentTime: () => time, seekTo: (t, allow) => seeks.push([t, allow]),
+  };
+  a.context.YT = { Player: function(id, opts) { events = opts.events; return player; } };
+  a.context.window.YT = a.context.YT;
+  a.run('draw = () => {}; data = {video_id: "first", title:"First",duration:40}; loadPlayer()');
+  assert.deepEqual(queued, []);
+  a.run('data = {video_id:"second", title:"Second", duration:40}; loadPlayer()');
+  events.onReady();
+  assert.deepEqual(queued, ['second']);
+  a.run('loadPlayer()');
+  assert.equal(queued.length, 1);
+  a.run('data = {video_id:"third", title:"Third", duration:40}; loadPlayer()');
+  assert.deepEqual(queued, ['second', 'third']);
+  time = 12.5;
+  a.run('tick(100)');
+  assert.equal(a.run('playerTime'), 12.5);
+  time = 18;
+  a.run('tick(200)');
+  assert.equal(a.run('playerTime'), 18);
+  a.run('plotBox = () => ({x:0,w:100}); view = {t0:10,t1:20}; drag = {moved:false}');
+  a.element('chart').listeners.pointerup({offsetX:50});
+  assert.deepEqual(seeks, [[15, true]]);
+  events.onError();
+  assert.match(a.element('player-status').textContent, /unavailable/);
+});
+
+test('API load errors leave a visible playback status', () => {
+  const a = app();
+  let script;
+  a.context.document.createElement = () => ({});
+  a.context.document.head = {append: el => {script = el;}};
+  a.run('loadPlayer()');
+  assert.equal(script.src, 'https://www.youtube.com/iframe_api');
+  script.onerror();
+  assert.match(a.element('player-status').textContent, /analysis chart is still usable/);
 });
