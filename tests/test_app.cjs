@@ -160,3 +160,42 @@ test('late YouTube readiness does not replace local playback', () => {
   a.context.window.onYouTubeIframeAPIReady();
   assert.equal(a.run('playerLoading'), false);
 });
+
+function audioHarness() {
+  const workers = [];
+  const context = vm.createContext({
+    window: {}, URL, Float32Array,
+    document: {currentScript: {src:'http://localhost/audio.js'}},
+    setTimeout() {}, clearTimeout() {},
+    OfflineAudioContext: class {
+      async decodeAudioData() {
+        return {duration:1, length:1, numberOfChannels:1, getChannelData: () => new Float32Array([1])};
+      }
+    },
+    Worker: class {
+      constructor() { workers.push(this); }
+      postMessage(message) { this.message = message; }
+      terminate() { this.terminated = true; }
+    },
+  });
+  vm.runInContext(fs.readFileSync('static/audio.js', 'utf8'), context);
+  return {api:context.window.audioAnalysis, workers};
+}
+
+for (const event of ['onerror', 'onmessageerror']) {
+  test(`a retired worker's ${event} cannot cancel the replacement`, async () => {
+    const {api, workers} = audioHarness();
+    const blob = () => ({size:1, arrayBuffer:async () => new ArrayBuffer(1)});
+    const first = api.analyzeAudio(blob(), {}).catch(error => error.message);
+    await new Promise(setImmediate);
+    api.reset();
+    assert.match(await first, /selection changed/);
+    const second = api.analyzeAudio(blob(), {}).catch(error => ({error:error.message}));
+    await new Promise(setImmediate);
+    workers[0][event]();
+    workers[1].onmessage({data:{id:workers[1].message.id, result:{duration:1}}});
+    assert.deepEqual(await second, {duration:1});
+    assert.notEqual(workers[1].terminated, true);
+    api.dispose();
+  });
+}

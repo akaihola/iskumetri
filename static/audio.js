@@ -45,9 +45,15 @@ window.audioAnalysis = (() => {
     progress('Loading analyzer and detecting strokes…');
     if (!worker) {
       worker = new Worker(workerURL, { type: 'module' });
-      worker.onerror = () => stop('The analyzer could not load. Check your connection and try again.');
-      worker.onmessageerror = () => stop('The analyzer returned an unreadable result. Please try again.');
+      const activeWorker = worker;
+      worker.onerror = () => {
+        if (worker === activeWorker) stop('The analyzer could not load. Check your connection and try again.');
+      };
+      worker.onmessageerror = () => {
+        if (worker === activeWorker) stop('The analyzer returned an unreadable result. Please try again.');
+      };
       worker.onmessage = ({data}) => {
+        if (worker !== activeWorker) return;
         const job = pending.get(data.id);
         if (!job) return;
         pending.delete(data.id);
