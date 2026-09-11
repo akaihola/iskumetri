@@ -168,3 +168,7 @@ uv run python -c "from pathlib import Path; from iskumetri.onsets import analyze
 Auto-tune should settle on sensitivity 2.0 and a 50 ms min gap, the exercise
 should span about 1.5–35.2 s, there should be around 257 strokes, and no gap
 should be under 40 ms.
+
+## Issues
+
+- Issues: `TASKS.md`
