@@ -272,7 +272,14 @@ def auto_tune(env: np.ndarray) -> dict:
     return max((r for r in results if r["score"] <= floor), key=lambda r: len(r["times"]))
 
 
+def validate_params(sensitivity: float | None, min_interval: float | None) -> None:
+    for name, value, lo, hi in [("sensitivity", sensitivity, 0.1, 5.0), ("min_interval", min_interval, 0.005, 1.0)]:
+        if value is not None and (not math.isfinite(value) or not lo <= value <= hi):
+            raise ValueError(f"{name} must be finite and between {lo} and {hi}")
+
+
 def analyze(path: Path, sensitivity: float | None = None, min_interval: float | None = None) -> dict:
+    validate_params(sensitivity, min_interval)
     y = decode(path)
     env = onset_strength(y)
     if sensitivity is None or min_interval is None:
