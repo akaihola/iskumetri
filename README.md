@@ -1,12 +1,26 @@
 # Iskumetri
 
-A web app that listens to a drummers' pyramid exercise on YouTube and draws the
-duration of every stroke as a zoomable bar graph.
+A web app that listens to a drummer's open–close–open roll on YouTube and draws
+the duration of every stroke as a zoomable bar graph.
 
-Paste a YouTube URL and the server pulls the audio, finds each stroke, and plots
-one bar per stroke: the bar spans until the next stroke and its height is that
-gap in milliseconds. A pyramid exercise then reads as a staircase, one step per
-subdivision.
+Paste a YouTube URL and the server pulls the audio, finds the exercise, finds
+each stroke in it, and plots one bar per stroke: the bar spans until the next
+stroke and its height is that gap in milliseconds. A roll that speeds up then
+reads as a falling ramp.
+
+## The exercise
+
+The [Percussive Arts Society rudiment sheet][pas] says every rudiment is to be
+practiced "open (slow) to close (fast) to open (slow)", and drummers call the
+exercise **open–close–open** (also written "open, closed, open" or
+"slow–fast–slow"; see [Wikipedia][ocō]). Videos that only go one way tend to be
+titled "slow to fast", "fast to slow" or, in classical terms, accelerando and
+ritardando; "tempo ramp" and "speed ramp" are informal. The subdivision
+staircase called a "pyramid" is a different exercise, although the app handles
+it as well, since a staircase is also a monotone ramp.
+
+[pas]: https://pas.org/rudiments/
+[ocō]: https://en.wikipedia.org/wiki/Open,_closed,_open
 
 ## Running it
 
@@ -17,10 +31,10 @@ uv sync
 uv run uvicorn iskumetri.server:app --port 8000
 ```
 
-Open <http://127.0.0.1:8000/>. A 60 bpm pyramid exercise is pre-filled, so
-pressing Analyze is enough to see it work. The first run on a video downloads and
-analyses it, which takes about 15 seconds for 10 minutes of audio; repeat runs
-are served from `cache/`.
+Open <http://127.0.0.1:8000/>. A slow-to-fast double stroke roll is pre-filled,
+so pressing Analyze is enough to see it work. The first run on a video downloads
+and analyses it, which takes about 15 seconds for 10 minutes of audio; repeat
+runs are served from `cache/` without touching the network.
 
 ## Reading the graph
 
@@ -36,9 +50,13 @@ are served from `cache/`.
   ending at each stroke. It is computed from the elapsed time over those N strokes,
   not as a mean of per-stroke tempos, which would lean towards the fast strokes.
   Keep N below the number of strokes per subdivision step, or the staircase blurs.
-- **Sensitivity** raises or lowers the detection threshold, and **min gap** sets how
-  close two strokes may be before they are treated as one. Recordings with backing
-  music or talking usually need a lower sensitivity.
+- **Auto-tune** (default) tries ten sensitivity and min gap combinations and keeps
+  the one that reads most like a steady ramp; the chosen values are shown under the
+  graph. Untick it to set **sensitivity** (the detection threshold) and **min gap**
+  (how close two strokes may be before they are treated as one) by hand. Recordings
+  with backing music or talking usually need a lower sensitivity.
+- **Green bars** are strokes the analyzer inferred inside a gap that was too long
+  for its neighbours, and the table marks them with `?`.
 
 ## How detection works
 
@@ -56,9 +74,75 @@ overlapping an attack lifts the flux slightly before the attack itself. That lea
 is near enough constant that it cancels when consecutive strokes are subtracted,
 so the durations the graph actually plots are accurate to within about 5 ms.
 
+### Cleaning up
+
+Raw peaks contain two kinds of errors: a second, weaker peak 30–50 ms after a
+stroke where the flux rings after the attack, and a stroke missed because it was
+softer than its neighbours. Both stand out against the surrounding gaps, because
+the exercise is by definition a smooth ramp.
+
+1. Any gap shorter than half the median of its twelve neighbours loses the weaker
+   of its two strokes, repeatedly.
+2. Any gap longer than 1.7 times that median is searched again at a third of the
+   threshold; a peak is accepted only if it splits the gap into two regular gaps.
+   These strokes are reported as *inferred*.
+3. Strokes are split at pauses, the smoothed gap series is cut into rising and
+   falling runs, and the longest run (or pair of opposite runs) with at least 16
+   strokes and a two-fold tempo change is the exercise. It is extended over
+   neighbouring runs that stay within its tempo range, so a held top speed is
+   kept. Only that part is plotted; intros, wrap-ups and other playing separated
+   from the roll by a pause are dropped. Without a ramp, the whole recording is
+   shown and the summary says so.
+4. In auto-tune mode, steps 1–3 run for every combination of sensitivity in
+   {0.5, 0.7, 1, 1.4, 2} and min gap in {30, 50 ms}. The flux envelope is computed
+   once, so each run costs well under a second. Each result is scored by the share
+   of gaps outside 0.6–1.6 times their local median plus the share of strokes the
+   segment step had to drop; among results within 0.01 of the best score, the one
+   with the most strokes wins, because a low sensitivity that skips every soft
+   stroke also looks smooth.
+
+On the pre-filled video auto-tune settles on sensitivity 2 and a 50 ms min gap,
+turning 270 raw detections into 257 strokes over 1.5–35.2 s with no gap under
+40 ms. The roll is a double stroke roll, which sets the remaining limits: at the
+slow end each hand's bounce is quieter than its stroke, so the gaps alternate
+between stroke-to-bounce (about 230 ms) and bounce-to-next-hand (about 420 ms),
+and where a bounce falls under the threshold the plot shows the hand period, twice
+the stroke period. Above about twelve strokes per second the two strokes of a
+double blur inside the 46 ms window, so the last seconds still jitter. At
+sensitivity 1 the bounces are skipped throughout and the graph is a smooth ramp
+from 660 ms to 75 ms, with half the strokes at the slow end.
+
 Detection quality depends on the recording. A clean drum or pad track resolves
 down to 32nd notes; a track with backing music, talking or a metronome will pick
-up strokes that are not there, which is what the two controls are for.
+up strokes that are not there, which is what the manual controls are for.
+
+## Cache
+
+Everything lives in `cache/` (or `$ISKUMETRI_CACHE`), keyed by the 11-character
+video id, so every URL form for the same video (`youtube.com/watch`, `youtu.be`,
+`m.`, `music.`, `shorts/`, `embed/`, `live/`, with or without playlist or
+timestamp parameters) hits the same files and needs no network:
+
+- `<id>.webm` or `<id>.m4a` — the audio stream.
+- `<id>.info.json` — title and duration.
+- `<id>.v2.auto.json` or `<id>.v2.s<sensitivity>.w<min gap>.json` — one analysis
+  per parameter choice. The version tag changes when the output shape does.
+
+### Audio format
+
+The smallest stream that still gives a reliable analysis is fetched:
+`bestaudio[abr<=100][asr>=44000]/worstaudio[asr>=44000]/bestaudio`. Measured on
+the pre-filled video, with the same detector on every stream:
+
+| yt-dlp format | codec | kbps | size | strokes after cleaning |
+|---|---|---|---|---|
+| 140 | AAC-LC 44.1 kHz | 130 | 581 KB | 210 (reference) |
+| 251 | Opus 48 kHz | 89 | 401 KB | 216, 207 of them within 12 ms of the reference |
+| 139 | HE-AAC, 22 kHz core | 49 | 225 KB | 191, loses about one stroke in ten |
+
+Opus at 89 kbps reproduces the reference; the 22 kHz-core HE-AAC stream smears
+attacks and is excluded by the sample-rate filter. Codecs decode with different
+fixed offsets (tens of milliseconds), which cancel in the gaps the graph plots.
 
 ## Limits
 
@@ -74,10 +158,13 @@ The tests are offline and need no audio fixtures. To re-check accuracy against a
 real recording:
 
 ```bash
-uv run yt-dlp -f "bestaudio[ext=m4a]/bestaudio" -o "cache/%(id)s.%(ext)s" \
-  "https://www.youtube.com/watch?v=VojYvzrYsjY"
+uv run yt-dlp -f "bestaudio[abr<=100][asr>=44000]/worstaudio[asr>=44000]/bestaudio" \
+  -o "cache/%(id)s.%(ext)s" "https://www.youtube.com/watch?v=NvIDlwzHRGQ"
+uv run python -c "from pathlib import Path; from iskumetri.onsets import analyze; \
+  r = analyze(Path('cache/NvIDlwzHRGQ.webm')); \
+  print(r['params'], r['segment'], len(r['onsets']), min(r['intervals']))"
 ```
 
-Analysing that clip should show interval modes near 127, 163, 247, 345 and
-481 ms, being 32nd, 16th-triplet, 16th, 8th-triplet and 8th notes at 60 bpm,
-with a median of 250 ms.
+Auto-tune should settle on sensitivity 2.0 and a 50 ms min gap, the exercise
+should span about 1.5–35.2 s, there should be around 257 strokes, and no gap
+should be under 40 ms.
