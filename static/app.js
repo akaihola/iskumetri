@@ -5,7 +5,8 @@ const canvas = $("chart"), tip = $("tooltip"), audio = $("audio");
 const ctx = canvas.getContext("2d");
 const PAD = { l: 56, r: 12, t: 12, b: 32 };
 
-let data = null;       // { onsets: [s], intervals: [s], duration }
+let data = null;       // { onsets: [s], intervals: [s], duration, segment, inferred }
+let inferred = new Set();  // bar indices the analyzer filled in, not detected
 let view = { t0: 0, t1: 1 };
 let hover = -1;
 let drag = null;
@@ -35,6 +36,11 @@ function syncControls() {
 }
 for (const el of document.querySelectorAll('input[name="mode"], #smooth')) el.addEventListener("input", syncControls);
 syncControls();  // browsers may restore the controls' values on reload
+function syncAuto() {
+  for (const id of ["sensitivity", "mingap"]) $(id).disabled = $("auto").checked;
+}
+$("auto").addEventListener("change", syncAuto);
+syncAuto();
 
 const css = (name) => getComputedStyle(document.querySelector(".viz-root")).getPropertyValue(name).trim();
 const fmtTime = (s) => `${Math.floor(s / 60)}:${(s % 60).toFixed(2).padStart(5, "0")}`;
@@ -55,8 +61,8 @@ form.addEventListener("submit", async (e) => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         url: $("url").value,
-        sensitivity: Number($("sensitivity").value),
-        min_interval: Number($("mingap").value) / 1000,
+        sensitivity: $("auto").checked ? null : Number($("sensitivity").value),
+        min_interval: $("auto").checked ? null : Number($("mingap").value) / 1000,
       }),
     });
     if (!res.ok) throw new Error(await errorText(res));
@@ -81,18 +87,23 @@ async function errorText(res) {
 
 function show(d) {
   data = d;
+  inferred = new Set(d.inferred);
   $("result").hidden = false;
   $("title").textContent = d.title;
   if (!audio.src.endsWith(`/api/audio/${d.video_id}`)) audio.src = `/api/audio/${d.video_id}`;
-  view = { t0: 0, t1: d.duration };
+  resetView();
   const ms = d.intervals.map((x) => x * 1000);
+  const seg = d.segment.detected
+    ? `Exercise ${fmtTime(d.segment.start)}–${fmtTime(d.segment.end)} of ${fmtTime(d.duration)}`
+    : `No tempo ramp found, showing the whole ${fmtTime(d.duration)}`;
+  const params = `sensitivity ${d.params.sensitivity}, min gap ${Math.round(d.params.min_interval * 1000)} ms`;
   $("summary").textContent = ms.length
-    ? `${d.onsets.length} strokes over ${fmtTime(d.duration)}. ` +
+    ? `${seg}: ${d.onsets.length} strokes (${d.inferred.length} inferred, ${d.raw_count} raw detections) with ${params}. ` +
       `Shortest gap ${Math.min(...ms).toFixed(0)} ms, longest ${Math.max(...ms).toFixed(0)} ms.`
     : `Only ${d.onsets.length} stroke(s) detected over ${fmtTime(d.duration)} — too few to measure a duration. Try raising sensitivity.`;
   $("table").tBodies[0].replaceChildren(...d.intervals.map((iv, i) => {
     const tr = document.createElement("tr");
-    for (const v of [i + 1, d.onsets[i].toFixed(3), (iv * 1000).toFixed(1), (60 / iv).toFixed(1)]) {
+    for (const v of [inferred.has(i) ? `${i + 1} ?` : i + 1, d.onsets[i].toFixed(3), (iv * 1000).toFixed(1), (60 / iv).toFixed(1)]) {
       const td = document.createElement("td");
       td.textContent = v;
       tr.append(td);
@@ -170,12 +181,12 @@ function draw() {
   // bars: one per stroke, spanning to the next stroke, 2px surface gap, rounded top
   ctx.save();
   ctx.beginPath(); ctx.rect(b.x, b.y, b.w, b.h); ctx.clip();
-  const fill = css("--series-1"), hoverFill = css("--series-1-hover");
+  const fill = css("--series-1"), hoverFill = css("--series-1-hover"), inferredFill = css("--series-2");
   for (let i = i0; i < i1; i++) {
     const x0 = xOf(on[i], b), x1 = xOf(on[i + 1], b);
     const w = Math.max(1, x1 - x0 - 2);
     const y = yOf(valueOf(i));
-    ctx.fillStyle = i === hover ? hoverFill : fill;
+    ctx.fillStyle = i === hover ? hoverFill : inferred.has(i) ? inferredFill : fill;
     const r = Math.min(4, w / 2, (b.y + b.h - y) / 2);
     ctx.beginPath(); ctx.roundRect(x0 + 1, y, w, b.y + b.h - y, [r, r, 0, 0]); ctx.fill();
   }
@@ -206,6 +217,11 @@ function draw() {
 }
 
 // ---- interaction: wheel zoom, drag pan, hover, click-to-seek, dblclick reset
+// The default view is the detected exercise, with a little air on both sides.
+function resetView() {
+  const { start, end } = data.segment;
+  setView(start - 0.02 * (end - start), end + 0.02 * (end - start));
+}
 function setView(t0, t1) {
   const span = Math.max(0.2, Math.min(data.duration, t1 - t0));
   t0 = Math.max(0, Math.min(data.duration - span, t0));
@@ -256,7 +272,7 @@ canvas.addEventListener("pointerup", (e) => {
   drag = null;
 });
 canvas.addEventListener("pointerleave", () => { hover = -1; tip.hidden = true; draw(); });
-canvas.addEventListener("dblclick", () => data && setView(0, data.duration));
+canvas.addEventListener("dblclick", () => data && resetView());
 new ResizeObserver(draw).observe(canvas);
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
 (function tick() { if (data && !audio.paused) draw(); requestAnimationFrame(tick); })();

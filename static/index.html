@@ -3,21 +3,22 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Iskumetri – drum pyramid beat durations</title>
+<title>Iskumetri – open–close–open drum roll stroke durations</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <main class="viz-root">
   <header>
     <h1>Iskumetri</h1>
-    <p>Paste a YouTube video of a drummers' pyramid exercise. Each bar is one stroke: its width spans until the next stroke, its height is that duration in milliseconds, or the tempo in strokes per minute.</p>
+    <p>Paste a YouTube video of an open–close–open drum roll (slow–fast–slow, also called slow to fast). The app finds the tempo ramp and plots only that part. Each bar is one stroke: its width spans until the next stroke, its height is that duration in milliseconds, or the tempo in strokes per minute.</p>
   </header>
 
   <form id="form">
     <input id="url" type="url" required placeholder="https://www.youtube.com/watch?v=…"
-           value="https://www.youtube.com/watch?v=VojYvzrYsjY" autocomplete="off">
-    <label>Sensitivity <input id="sensitivity" type="number" required min="0.2" max="5" step="0.1" value="1"></label>
-    <label>Min gap (ms) <input id="mingap" type="number" required min="10" max="500" step="5" value="30"></label>
+           value="https://www.youtube.com/watch?v=NvIDlwzHRGQ" autocomplete="off">
+    <label><input id="auto" type="checkbox" checked> Auto-tune</label>
+    <label>Sensitivity <input id="sensitivity" type="number" required min="0.2" max="5" step="0.1" value="1" disabled></label>
+    <label>Min gap (ms) <input id="mingap" type="number" required min="10" max="500" step="5" value="30" disabled></label>
     <button id="go" type="submit">Analyze</button>
     <output id="status" aria-live="polite"></output>
   </form>
@@ -25,7 +26,7 @@
   <section id="result" hidden>
     <h2 id="title"></h2>
     <audio id="audio" controls preload="metadata"></audio>
-    <p class="hint">Scroll to zoom · drag to pan · double-click to reset · click a bar to seek</p>
+    <p class="hint">Scroll to zoom · drag to pan · double-click to reset · click a bar to seek · green bars are inferred strokes</p>
     <div class="view-controls">
       <label><input type="radio" name="mode" value="ms" checked> Duration (ms)</label>
       <label><input type="radio" name="mode" value="bpm"> Tempo (strokes/min)</label>
