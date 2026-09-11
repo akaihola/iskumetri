@@ -5,7 +5,7 @@ as a zoomable bar graph. Audio stays on your device. The existing NumPy detector
 runs in a Pyodide worker, with browser decoding and playback.
 
 YouTube extraction from a plain static page is not possible: YouTube's player
-API and its media CDN send CORS headers only for youtube.com origins, so a
+API and its media CDN send no CORS headers to third-party origins, so a
 static page cannot read them without a proxy or a browser extension. The app
 accepts local files independently. The native Python API still supports
 YouTube downloads. See the [extraction proof](docs/validation.md#proof-2026-09-11)

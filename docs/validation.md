@@ -216,8 +216,8 @@ analysis as delivered and YouTube extraction/download as unresolved.
 Header-level probes from this sandbox show that the blocker is YouTube's
 CORS policy, not a gap in the browser probe above. The `Origin` request header
 is set by the browser and cannot be changed by page script, so a static
-GitHub Pages origin can never satisfy an allowlist that names only
-youtube.com. Commands, with `$URL` being a `videoplayback` URL from
+GitHub Pages origin can never satisfy an allowlist that excludes third-party
+origins. Commands, with `$URL` being a `videoplayback` URL from
 `uv run --with 'yt-dlp>=2026.8.19' yt-dlp -g -f 'ba/ba*' <watch URL>`:
 
 ```bash
