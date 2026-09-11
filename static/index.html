@@ -29,6 +29,8 @@
     <div class="view-controls">
       <label><input type="radio" name="mode" value="ms" checked> Duration (ms)</label>
       <label><input type="radio" name="mode" value="bpm"> Tempo (strokes/min)</label>
+      <label>Average over last <input id="smooth" type="number" min="1" max="64" step="1" value="1"> strokes</label>
+      <span id="legend" hidden><i class="sw bar"></i> per stroke <i class="sw line"></i> <span id="legend-avg"></span></span>
     </div>
     <div id="chart-wrap">
       <canvas id="chart" role="img" aria-label="Bar chart of beat durations over time"></canvas>
