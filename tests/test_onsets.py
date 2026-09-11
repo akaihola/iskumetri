@@ -246,3 +246,44 @@ def test_auto_tune_keeps_a_quiet_real_stroke_in_a_ramp():
     env = onset_strength(click_track(strokes, duration=12, gains={soft: .05}))
     found = auto_tune(env)['times']
     assert all(np.min(abs(found - t)) < .025 for t in strokes)
+
+
+@pytest.mark.parametrize('params', [(None, None), (1.0, 0.03)])
+def test_pcm_matches_native_wrapper(monkeypatch, params):
+    from iskumetri import onsets
+    y = click_track(CLICKS)
+    monkeypatch.setattr(onsets, 'decode', lambda _: y)
+    assert onsets.analyze(None, *params) == onsets.analyze_pcm(y, *params)
+
+
+@pytest.mark.parametrize('y', [np.zeros((2, 2), dtype=np.float32), np.array([np.nan], dtype=np.float32),
+                             np.array([np.inf], dtype=np.float32), np.zeros(2), [0.0]])
+def test_pcm_rejects_invalid_samples(y):
+    from iskumetri.onsets import analyze_pcm
+    with pytest.raises(ValueError, match='PCM'):
+        analyze_pcm(y)
+
+
+def test_empty_pcm_is_finite():
+    import json
+    from iskumetri.onsets import analyze_pcm
+    result = analyze_pcm(np.array([], dtype=np.float32))
+    assert result['duration'] == 0
+    assert result['onsets'] == result['intervals'] == result['velocities'] == []
+    json.dumps(result, allow_nan=False)
+
+
+def test_native_params_are_validated_before_decoding(monkeypatch):
+    from iskumetri import onsets
+    monkeypatch.setattr(onsets, 'decode', lambda _: pytest.fail('decode called'))
+    with pytest.raises(ValueError, match='sensitivity'):
+        onsets.analyze(None, 0, 0.03)
+
+
+def test_velocity_chunking_preserves_the_reference(monkeypatch):
+    from iskumetri import onsets
+    y = click_track(CLICKS)
+    times = np.array(CLICKS)
+    expected = onsets.stroke_velocities(y, times)
+    monkeypatch.setattr(onsets, 'BLOCK', 7)
+    assert onsets.stroke_velocities(y, times) == expected
