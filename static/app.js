@@ -9,6 +9,32 @@ let data = null;       // { onsets: [s], intervals: [s], duration }
 let view = { t0: 0, t1: 1 };
 let hover = -1;
 let drag = null;
+let mode = "ms";       // "ms" plots the gap after each stroke, "bpm" its reciprocal
+let smooth = 1;        // strokes per averaging window; 1 draws no average line
+
+// Height of bar i in the current unit.
+const valueOf = (i) => mode === "ms" ? data.intervals[i] * 1000 : 60 / data.intervals[i];
+// Same unit, averaged over the n strokes ending with bar i. Computed from the
+// elapsed time, not a mean of per-stroke bpm: the mean of reciprocals would be
+// pulled towards the fastest strokes.
+function windowed(i, n) {
+  if (i + 1 < n) return NaN;
+  const dt = data.onsets[i + 1] - data.onsets[i + 1 - n];
+  return mode === "ms" ? (dt / n) * 1000 : (60 * n) / dt;
+}
+const unitLabel = () => mode === "ms" ? "ms per stroke" : "strokes per minute";
+const fmtValue = (v) => mode === "ms" ? `${v.toFixed(1)} ms` : `${v.toFixed(0)} strokes/min`;
+
+function syncControls() {
+  mode = document.querySelector('input[name="mode"]:checked').value;
+  smooth = Math.max(1, Math.floor(Number($("smooth").value) || 1));
+  canvas.setAttribute("aria-label", `Bar chart of ${unitLabel()} over time`);
+  $("legend").hidden = smooth < 2;
+  $("legend-avg").textContent = `average over last ${smooth} strokes`;
+  draw();
+}
+for (const el of document.querySelectorAll('input[name="mode"], #smooth')) el.addEventListener("input", syncControls);
+syncControls();  // browsers may restore the controls' values on reload
 
 const css = (name) => getComputedStyle(document.querySelector(".viz-root")).getPropertyValue(name).trim();
 const fmtTime = (s) => `${Math.floor(s / 60)}:${(s % 60).toFixed(2).padStart(5, "0")}`;
@@ -113,11 +139,11 @@ function draw() {
   const { onsets: on, intervals: iv } = data;
 
   let yMax = 0;
-  for (let i = i0; i < i1; i++) yMax = Math.max(yMax, iv[i]);
-  yMax = (yMax || 1) * 1000 * 1.08;
-  const yOf = (ms) => b.y + b.h - (ms / yMax) * b.h;
+  for (let i = i0; i < i1; i++) yMax = Math.max(yMax, valueOf(i));
+  yMax = (yMax || 1) * 1.08;
+  const yOf = (v) => b.y + b.h - (v / yMax) * b.h;
 
-  // grid + y axis (ms)
+  // grid + y axis
   ctx.font = "12px system-ui, sans-serif";
   ctx.fillStyle = css("--text-secondary");
   ctx.strokeStyle = css("--grid");
@@ -130,7 +156,7 @@ function draw() {
     ctx.fillText(v.toLocaleString(), b.x - 8, y);
   }
   ctx.save(); ctx.translate(14, b.y + b.h / 2); ctx.rotate(-Math.PI / 2);
-  ctx.textAlign = "center"; ctx.fillText("ms per stroke", 0, 0); ctx.restore();
+  ctx.textAlign = "center"; ctx.fillText(unitLabel(), 0, 0); ctx.restore();
 
   // x axis (time)
   ctx.textAlign = "center"; ctx.textBaseline = "top";
@@ -148,10 +174,24 @@ function draw() {
   for (let i = i0; i < i1; i++) {
     const x0 = xOf(on[i], b), x1 = xOf(on[i + 1], b);
     const w = Math.max(1, x1 - x0 - 2);
-    const y = yOf(iv[i] * 1000);
+    const y = yOf(valueOf(i));
     ctx.fillStyle = i === hover ? hoverFill : fill;
     const r = Math.min(4, w / 2, (b.y + b.h - y) / 2);
     ctx.beginPath(); ctx.roundRect(x0 + 1, y, w, b.y + b.h - y, [r, r, 0, 0]); ctx.fill();
+  }
+  // moving average: one point per stroke, at the moment its window completes
+  if (smooth > 1) {
+    ctx.strokeStyle = css("--series-2"); ctx.lineWidth = 2; ctx.lineJoin = "round";
+    ctx.beginPath();
+    let pen = false;
+    for (let i = Math.max(0, i0 - 1); i < i1; i++) {
+      const v = windowed(i, smooth);
+      if (Number.isNaN(v)) continue;
+      const x = xOf(on[i + 1], b), y = yOf(v);
+      pen ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+      pen = true;
+    }
+    ctx.stroke();
   }
   // playhead
   if (audio.src && audio.currentTime >= view.t0 && audio.currentTime <= view.t1) {
@@ -198,7 +238,9 @@ canvas.addEventListener("pointermove", (e) => {
   hover = i >= 0 && i < data.intervals.length && e.offsetX >= b.x && e.offsetX <= b.x + b.w ? i : -1;
   if (hover >= 0) {
     const ms = data.intervals[hover] * 1000;
-    tip.textContent = `#${hover + 1} at ${fmtTime(data.onsets[hover])} · ${ms.toFixed(1)} ms · ${(60000 / ms).toFixed(0)} strokes/min`;
+    const avg = smooth > 1 ? windowed(hover, smooth) : NaN;
+    tip.textContent = `#${hover + 1} at ${fmtTime(data.onsets[hover])} · ${ms.toFixed(1)} ms · ${(60000 / ms).toFixed(0)} strokes/min`
+      + (Number.isNaN(avg) ? "" : ` · last ${smooth}: ${fmtValue(avg)}`);
     tip.hidden = false;
     const wrap = canvas.parentElement.getBoundingClientRect();
     tip.style.left = `${Math.min(e.offsetX + 14, wrap.width - tip.offsetWidth - 4)}px`;

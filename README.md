@@ -27,6 +27,15 @@ are served from `cache/`.
 - **Scroll** to zoom about the cursor, **drag** to pan, **double-click** to reset.
 - **Hover** a bar for its stroke number, timestamp, duration and strokes per minute.
 - **Click** a bar to seek the audio there, and play along under a moving playhead.
+- **Duration / Tempo** switches the bar height between the gap in milliseconds and
+  its reciprocal in strokes per minute. Both come from the time since the previous
+  stroke, so either view shows the jitter of every single stroke. The tempo view
+  magnifies jitter on fast strokes and flattens it on slow ones, because a fixed
+  error in milliseconds is a larger share of a short gap.
+- **Average over last N strokes** overlays a line with the mean of the N gaps
+  ending at each stroke. It is computed from the elapsed time over those N strokes,
+  not as a mean of per-stroke tempos, which would lean towards the fast strokes.
+  Keep N below the number of strokes per subdivision step, or the staircase blurs.
 - **Sensitivity** raises or lowers the detection threshold, and **min gap** sets how
   close two strokes may be before they are treated as one. Recordings with backing
   music or talking usually need a lower sensitivity.
