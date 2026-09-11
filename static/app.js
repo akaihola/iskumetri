@@ -23,21 +23,18 @@ function windowed(i, n) {
   return mode === "ms" ? (dt / n) * 1000 : (60 * n) / dt;
 }
 const unitLabel = () => mode === "ms" ? "ms per stroke" : "strokes per minute";
-const fmtValue = (v) => mode === "ms" ? `${v.toFixed(1)} ms` : `${v.toFixed(1)} bpm`;
+const fmtValue = (v) => mode === "ms" ? `${v.toFixed(1)} ms` : `${v.toFixed(0)} strokes/min`;
 
-for (const r of document.querySelectorAll('input[name="mode"]')) {
-  r.addEventListener("change", () => {
-    mode = r.value;
-    canvas.setAttribute("aria-label", `Bar chart of ${unitLabel()} over time`);
-    draw();
-  });
-}
-$("smooth").addEventListener("input", (e) => {
-  smooth = Math.max(1, Math.floor(Number(e.target.value) || 1));
+function syncControls() {
+  mode = document.querySelector('input[name="mode"]:checked').value;
+  smooth = Math.max(1, Math.floor(Number($("smooth").value) || 1));
+  canvas.setAttribute("aria-label", `Bar chart of ${unitLabel()} over time`);
   $("legend").hidden = smooth < 2;
   $("legend-avg").textContent = `average over last ${smooth} strokes`;
   draw();
-});
+}
+for (const el of document.querySelectorAll('input[name="mode"], #smooth')) el.addEventListener("input", syncControls);
+syncControls();  // browsers may restore the controls' values on reload
 
 const css = (name) => getComputedStyle(document.querySelector(".viz-root")).getPropertyValue(name).trim();
 const fmtTime = (s) => `${Math.floor(s / 60)}:${(s % 60).toFixed(2).padStart(5, "0")}`;
