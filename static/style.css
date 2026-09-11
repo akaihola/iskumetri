@@ -41,7 +41,9 @@ label input { width: 5.5rem; }
 button { background: var(--series-1); color: #fff; border-color: transparent; cursor: pointer; }
 button:disabled { opacity: .6; cursor: progress; }
 #status { flex-basis: 100%; min-height: 1.4em; }
-audio { width: 100%; margin: .5rem 0; }
+.video-wrap { width: min(100%, 720px); aspect-ratio: 16 / 9; min-height: 200px; margin: .5rem 0; background: var(--surface-2); }
+#player { width: 100%; height: 100%; border: 0; }
+#player-status { color: var(--text-secondary); }
 .view-controls { display: flex; flex-wrap: wrap; gap: .4rem 1.2rem; align-items: center; margin: .5rem 0; }
 .view-controls label input[type="radio"] { width: auto; }
 #smooth { width: 4rem; }
@@ -54,9 +56,13 @@ audio { width: 100%; margin: .5rem 0; }
 #chart { width: 100%; height: 100%; display: block; cursor: crosshair; touch-action: none; }
 #tooltip {
   position: absolute; pointer-events: none; padding: .35rem .55rem; border-radius: 6px;
-  background: var(--surface-2); color: var(--text-primary); font-size: .85rem; white-space: nowrap;
+  background: var(--surface-2); color: var(--text-primary); font-size: .85rem; max-width: calc(100% - 8px); white-space: normal;
   box-shadow: 0 2px 8px rgb(0 0 0 / .2);
 }
 table { border-collapse: collapse; font-variant-numeric: tabular-nums; }
 th, td { padding: .2rem .8rem; text-align: right; border-bottom: 1px solid var(--grid); }
 th { color: var(--text-secondary); font-weight: 600; }
+
+.volume-scale { display: inline-block; width: 80px; height: 10px; background: linear-gradient(to right, color-mix(in srgb, var(--series-1) 25%, transparent), var(--series-1)); }
+
+details { overflow-x: auto; }

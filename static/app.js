@@ -1,7 +1,7 @@
 "use strict";
 const $ = (id) => document.getElementById(id);
 const form = $("form"), status = $("status"), go = $("go");
-const canvas = $("chart"), tip = $("tooltip"), audio = $("audio");
+const canvas = $("chart"), tip = $("tooltip");
 const ctx = canvas.getContext("2d");
 const PAD = { l: 56, r: 12, t: 12, b: 32 };
 
@@ -13,33 +13,83 @@ let drag = null;
 let mode = "ms";       // "ms" plots the gap after each stroke, "bpm" its reciprocal
 let smooth = 1;        // strokes per averaging window; 1 draws no average line
 
+let player = null, playerReady = false, playerVideoId = null, playerTime = null;
+let playerLoading = false, playerTimeout;
+
+function cuePlayer() {
+  if (!playerReady || !data || playerVideoId === data.video_id) return;
+  playerVideoId = data.video_id;
+  playerTime = null;
+  $("player-status").textContent = "";
+  player.getIframe().title = data.title;
+  player.cueVideoById(data.video_id);
+}
+function loadPlayer() {
+  if (playerReady) { cuePlayer(); return; }
+  if (playerLoading) return;
+  playerLoading = true;
+  const fail = () => {
+    clearTimeout(playerTimeout);
+    $("player-status").textContent = "YouTube playback is unavailable. The analysis chart is still usable.";
+  };
+  const create = () => {
+    player = new YT.Player("player", {
+      playerVars: { playsinline: 1, origin: window.location.origin },
+      events: {
+        onReady: () => { clearTimeout(playerTimeout); playerReady = true; cuePlayer(); },
+        onStateChange: (event) => {
+          if (event.data === 1) $("player-status").textContent = "";
+          playerTime = player.getCurrentTime();
+          draw();
+        },
+        onError: fail,
+      },
+    });
+  };
+  playerTimeout = setTimeout(fail, 15000);
+  if (window.YT?.Player) { create(); return; }
+  window.onYouTubeIframeAPIReady = create;
+  const script = document.createElement("script");
+  script.src = "https://www.youtube.com/iframe_api";
+  script.onerror = () => { playerLoading = false; script.remove(); fail(); };
+  document.head.append(script);
+}
+
 // Height of bar i in the current unit.
 const valueOf = (i) => mode === "ms" ? data.intervals[i] * 1000 : 60 / data.intervals[i];
-// Same unit, averaged over the n strokes ending with bar i. Computed from the
-// elapsed time, not a mean of per-stroke bpm: the mean of reciprocals would be
-// pulled towards the fastest strokes.
+// N intervals around onset i. Odd N has one extra following interval;
+// clipped edge windows use their actual interval count, without padding.
 function windowed(i, n) {
-  if (i + 1 < n) return NaN;
-  const dt = data.onsets[i + 1] - data.onsets[i + 1 - n];
-  return mode === "ms" ? (dt / n) * 1000 : (60 * n) / dt;
+  const left = Math.floor(n / 2);
+  const a = Math.max(0, i - left), b = Math.min(data.intervals.length, i + n - left);
+  const count = b - a, dt = data.onsets[b] - data.onsets[a];
+  if (count <= 0 || dt <= 0) return NaN;
+  return mode === "ms" ? (dt / count) * 1000 : (60 * count) / dt;
 }
 const unitLabel = () => mode === "ms" ? "ms per stroke" : "strokes per minute";
 const fmtValue = (v) => mode === "ms" ? `${v.toFixed(1)} ms` : `${v.toFixed(0)} strokes/min`;
 
 function syncControls() {
   mode = document.querySelector('input[name="mode"]:checked').value;
-  smooth = Math.max(1, Math.floor(Number($("smooth").value) || 1));
+  smooth = Math.min(64, Math.max(1, Math.floor(Number($("smooth").value) || 1)));
   canvas.setAttribute("aria-label", `Bar chart of ${unitLabel()} over time`);
   $("legend").hidden = smooth < 2;
-  $("legend-avg").textContent = `average over last ${smooth} strokes`;
+  $("legend-avg").textContent = `average around each stroke (${smooth} intervals)`;
   draw();
 }
 for (const el of document.querySelectorAll('input[name="mode"], #smooth')) el.addEventListener("input", syncControls);
 syncControls();  // browsers may restore the controls' values on reload
 function syncAuto() {
-  for (const id of ["sensitivity", "mingap"]) $(id).disabled = $("auto").checked;
+  if ($("auto").checked && !$("sensitivity").checkValidity()) {
+    $("sensitivity").value = $("sensitivity").defaultValue;
+  }
+  $("mingap").disabled = $("auto").checked;
 }
 $("auto").addEventListener("change", syncAuto);
+$("sensitivity").addEventListener("input", () => {
+  $("auto").checked = false;
+  syncAuto();
+});
 syncAuto();
 
 const css = (name) => getComputedStyle(document.querySelector(".viz-root")).getPropertyValue(name).trim();
@@ -90,7 +140,7 @@ function show(d) {
   inferred = new Set(d.inferred);
   $("result").hidden = false;
   $("title").textContent = d.title;
-  if (!audio.src.endsWith(`/api/audio/${d.video_id}`)) audio.src = `/api/audio/${d.video_id}`;
+  loadPlayer();
   resetView();
   const ms = d.intervals.map((x) => x * 1000);
   const seg = d.segment.detected
@@ -103,7 +153,7 @@ function show(d) {
     : `Only ${d.onsets.length} stroke(s) detected over ${fmtTime(d.duration)} — too few to measure a duration. Try raising sensitivity.`;
   $("table").tBodies[0].replaceChildren(...d.intervals.map((iv, i) => {
     const tr = document.createElement("tr");
-    for (const v of [inferred.has(i) ? `${i + 1} ?` : i + 1, d.onsets[i].toFixed(3), (iv * 1000).toFixed(1), (60 / iv).toFixed(1)]) {
+    for (const v of [inferred.has(i) ? `${i + 1} ?` : i + 1, d.onsets[i].toFixed(3), (iv * 1000).toFixed(1), (60 / iv).toFixed(1), `${Math.round(d.velocities[i] * 100)}%`]) {
       const td = document.createElement("td");
       td.textContent = v;
       tr.append(td);
@@ -151,6 +201,12 @@ function draw() {
 
   let yMax = 0;
   for (let i = i0; i < i1; i++) yMax = Math.max(yMax, valueOf(i));
+  if (smooth > 1) {
+    for (let i = Math.max(0, i0 - 1); i <= i1; i++) {
+      const v = windowed(i, smooth);
+      if (Number.isFinite(v)) yMax = Math.max(yMax, v);
+    }
+  }
   yMax = (yMax || 1) * 1.08;
   const yOf = (v) => b.y + b.h - (v / yMax) * b.h;
 
@@ -181,32 +237,39 @@ function draw() {
   // bars: one per stroke, spanning to the next stroke, 2px surface gap, rounded top
   ctx.save();
   ctx.beginPath(); ctx.rect(b.x, b.y, b.w, b.h); ctx.clip();
-  const fill = css("--series-1"), hoverFill = css("--series-1-hover"), inferredFill = css("--series-2");
+  const fill = css("--series-1");
   for (let i = i0; i < i1; i++) {
     const x0 = xOf(on[i], b), x1 = xOf(on[i + 1], b);
     const w = Math.max(1, x1 - x0 - 2);
     const y = yOf(valueOf(i));
-    ctx.fillStyle = i === hover ? hoverFill : inferred.has(i) ? inferredFill : fill;
+    ctx.fillStyle = fill;
+    ctx.globalAlpha = 0.25 + 0.75 * data.velocities[i];
     const r = Math.min(4, w / 2, (b.y + b.h - y) / 2);
     ctx.beginPath(); ctx.roundRect(x0 + 1, y, w, b.y + b.h - y, [r, r, 0, 0]); ctx.fill();
+    ctx.globalAlpha = 1;
+    if (inferred.has(i) || i === hover) {
+      ctx.strokeStyle = i === hover ? css("--text-primary") : css("--series-2");
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
   }
-  // moving average: one point per stroke, at the moment its window completes
+  // Centered average, including the final onset which has no interval bar.
   if (smooth > 1) {
     ctx.strokeStyle = css("--series-2"); ctx.lineWidth = 2; ctx.lineJoin = "round";
     ctx.beginPath();
     let pen = false;
-    for (let i = Math.max(0, i0 - 1); i < i1; i++) {
+    for (let i = Math.max(0, i0 - 1); i <= i1; i++) {
       const v = windowed(i, smooth);
       if (Number.isNaN(v)) continue;
-      const x = xOf(on[i + 1], b), y = yOf(v);
+      const x = xOf(on[i], b), y = yOf(v);
       pen ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
       pen = true;
     }
     ctx.stroke();
   }
   // playhead
-  if (audio.src && audio.currentTime >= view.t0 && audio.currentTime <= view.t1) {
-    const x = Math.round(xOf(audio.currentTime, b)) + 0.5;
+  if (playerTime !== null && playerTime >= view.t0 && playerTime <= view.t1) {
+    const x = Math.round(xOf(playerTime, b)) + 0.5;
     ctx.strokeStyle = css("--playhead"); ctx.lineWidth = 2;
     ctx.beginPath(); ctx.moveTo(x, b.y); ctx.lineTo(x, b.y + b.h); ctx.stroke();
   }
@@ -255,18 +318,18 @@ canvas.addEventListener("pointermove", (e) => {
   if (hover >= 0) {
     const ms = data.intervals[hover] * 1000;
     const avg = smooth > 1 ? windowed(hover, smooth) : NaN;
-    tip.textContent = `#${hover + 1} at ${fmtTime(data.onsets[hover])} · ${ms.toFixed(1)} ms · ${(60000 / ms).toFixed(0)} strokes/min`
-      + (Number.isNaN(avg) ? "" : ` · last ${smooth}: ${fmtValue(avg)}`);
+    tip.textContent = `#${hover + 1} at ${fmtTime(data.onsets[hover])} · ${ms.toFixed(1)} ms · ${(60000 / ms).toFixed(0)} strokes/min · volume ${Math.round(data.velocities[hover] * 100)}%${inferred.has(hover) ? " · inferred" : ""}`
+      + (Number.isNaN(avg) ? "" : ` · centered ${smooth}: ${fmtValue(avg)}`);
     tip.hidden = false;
     const wrap = canvas.parentElement.getBoundingClientRect();
-    tip.style.left = `${Math.min(e.offsetX + 14, wrap.width - tip.offsetWidth - 4)}px`;
+    tip.style.left = `${Math.max(4, Math.min(e.offsetX + 14, wrap.width - tip.offsetWidth - 4))}px`;
     tip.style.top = `${Math.max(0, e.offsetY - 36)}px`;
   } else tip.hidden = true;
   draw();
 });
 canvas.addEventListener("pointerup", (e) => {
-  if (drag && !drag.moved && audio.src) {
-    audio.currentTime = Math.max(0, Math.min(data.duration, tOf(e.offsetX, plotBox())));
+  if (drag && !drag.moved && playerReady) {
+    player.seekTo(Math.max(0, Math.min(data.duration, tOf(e.offsetX, plotBox()))), true);
     draw();
   }
   drag = null;
@@ -275,5 +338,16 @@ canvas.addEventListener("pointerleave", () => { hover = -1; tip.hidden = true; d
 canvas.addEventListener("dblclick", () => data && resetView());
 new ResizeObserver(draw).observe(canvas);
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
-(function tick() { if (data && !audio.paused) draw(); requestAnimationFrame(tick); })();
-audio.addEventListener("seeked", draw);
+// Sample the player's clock even when paused: iframe seeks have no seeked event.
+let lastSample = -Infinity, animation;
+function tick(now) {
+  if (playerReady && data && now - lastSample >= 100) {
+    lastSample = now;
+    const time = player.getCurrentTime();
+    if (time !== playerTime) { playerTime = time; draw(); }
+  }
+  animation = requestAnimationFrame(tick);
+}
+animation = requestAnimationFrame(tick);
+window.addEventListener("pagehide", () => { cancelAnimationFrame(animation); clearTimeout(playerTimeout); });
+window.addEventListener("pageshow", () => { cancelAnimationFrame(animation); animation = requestAnimationFrame(tick); });

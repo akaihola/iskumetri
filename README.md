@@ -40,22 +40,31 @@ runs are served from `cache/` without touching the network.
 
 - **Scroll** to zoom about the cursor, **drag** to pan, **double-click** to reset.
 - **Hover** a bar for its stroke number, timestamp, duration and strokes per minute.
-- **Click** a bar to seek the audio there, and play along under a moving playhead.
+- **Click** a bar to seek the embedded YouTube video there. Its playback clock drives the chart
+  playhead, including seeks while paused. Reanalyzing the same video preserves
+  playback. YouTube embedding requires network access and may be disabled by
+  the uploader; the chart remains usable if playback fails.
 - **Duration / Tempo** switches the bar height between the gap in milliseconds and
   its reciprocal in strokes per minute. Both come from the time since the previous
   stroke, so either view shows the jitter of every single stroke. The tempo view
   magnifies jitter on fast strokes and flattens it on slow ones, because a fixed
   error in milliseconds is a larger share of a short gap.
-- **Average over last N strokes** overlays a line with the mean of the N gaps
-  ending at each stroke. It is computed from the elapsed time over those N strokes,
-  not as a mean of per-stroke tempos, which would lean towards the fast strokes.
-  Keep N below the number of strokes per subdivision step, or the staircase blurs.
+- **Average around each stroke** uses N intervals around that stroke, requiring
+  N+1 timestamps for a full window. Even N splits equally before and after;
+  odd N has one extra following interval. Edges use only available intervals.
+  Mean duration is elapsed time divided by interval count; tempo is 60 times
+  interval count divided by elapsed seconds, not the average of reciprocals.
+  N=1 hides the overlay. Keep N below a subdivision step to avoid blurring it.
 - **Auto-tune** (default) tries ten sensitivity and min gap combinations and keeps
   the one that reads most like a steady ramp; the chosen values are shown under the
-  graph. Untick it to set **sensitivity** (the detection threshold) and **min gap**
+  graph. Editing **sensitivity** turns Auto-tune off automatically. Untick it to set **sensitivity** (the detection threshold) and **min gap**
   (how close two strokes may be before they are treated as one) by hand. Recordings
   with backing music or talking usually need a lower sensitivity.
-- **Green bars** are strokes the analyzer inferred inside a gap that was too long
+- **Color shade** shows relative recorded volume, from quiet/faint to loud/solid.
+  A 40 ms attack RMS window is normalized to the recording’s maximum 40 ms RMS,
+  with -40 dB mapped to 0% and 0 dB to 100%. This measures recorded sound, not
+  physical stick velocity. Hover or open the table for the numeric value.
+- **Green outlines** mark strokes the analyzer inferred inside a gap that was too long
   for its neighbours, and the table marks them with `?`.
 
 ## How detection works
@@ -93,24 +102,20 @@ the exercise is by definition a smooth ramp.
    kept. Only that part is plotted; intros, wrap-ups and other playing separated
    from the roll by a pause are dropped. Without a ramp, the whole recording is
    shown and the summary says so.
-4. In auto-tune mode, steps 1–3 run for every combination of sensitivity in
-   {0.5, 0.7, 1, 1.4, 2} and min gap in {30, 50 ms}. The flux envelope is computed
-   once, so each run costs well under a second. Each result is scored by the share
-   of gaps outside 0.6–1.6 times their local median plus the share of strokes the
-   segment step had to drop; among results within 0.01 of the best score, the one
-   with the most strokes wins, because a low sensitivity that skips every soft
-   stroke also looks smooth.
+4. Auto-tune runs the sensitivity/min-gap grid with an additional local prominence
+   floor: a candidate must clear 5% of the strongest prominence within one second
+   either side. The floor follows the quieter attacks in fast passages, and also
+   applies to gap recovery. Among near-equal regularity scores, summed attack
+   evidence breaks ties. Empty detections cannot beat supported results.
 
-On the pre-filled video auto-tune settles on sensitivity 2 and a 50 ms min gap,
-turning 270 raw detections into 257 strokes over 1.5–35.2 s with no gap under
-40 ms. The roll is a double stroke roll, which sets the remaining limits: at the
-slow end each hand's bounce is quieter than its stroke, so the gaps alternate
-between stroke-to-bounce (about 230 ms) and bounce-to-next-hand (about 420 ms),
-and where a bounce falls under the threshold the plot shows the hand period, twice
-the stroke period. Above about twelve strokes per second the two strokes of a
-double blur inside the 46 ms window, so the last seconds still jitter. At
-sensitivity 1 the bounces are skipped throughout and the graph is a smooth ramp
-from 660 ms to 75 ms, with half the strokes at the slow end.
+On the cached AAC version of the pre-filled video, this removes 14 weak early
+peaks from the old 257-stroke result. The 14 retained strokes before 0:09 exactly
+match manual sensitivity 1 / 30 ms, and all 131 old Auto-tune detections from
+0:25 remain unchanged. The result has 243 strokes over 1.701–35.213 s using
+sensitivity 2 / 50 ms. This comparison demonstrates the reported slow/fast
+tradeoff is addressed; it is not a hand-labelled ground truth for every stroke.
+Very quiet intentional strokes can still resemble ringing, and recordings with
+abrupt changes in volume need particular care.
 
 Detection quality depends on the recording. A clean drum or pad track resolves
 down to 32nd notes; a track with backing music, talking or a metronome will pick
@@ -124,9 +129,20 @@ video id, so every URL form for the same video (`youtube.com/watch`, `youtu.be`,
 timestamp parameters) hits the same files and needs no network:
 
 - `<id>.webm` or `<id>.m4a` — the audio stream.
-- `<id>.info.json` — title and duration.
-- `<id>.v2.auto.json` or `<id>.v2.s<sensitivity>.w<min gap>.json` — one analysis
+- `<id>.info.json` — title, duration and description. Legacy entries refresh metadata
+  once when online; a failed refresh keeps cached audio usable.
+- `<id>.v3.auto.json` or `<id>.v3.s<sensitivity>.w<min gap>.json` — one analysis
   per parameter choice. The version tag changes when the output shape does.
+
+### Reusable stages
+
+`iskumetri.pipeline.fetch(video_id, cache)` downloads audio and caches metadata.
+`iskumetri.onsets.analyze(audio_path, sensitivity, min_interval)` analyzes local
+media without HTTP or storage. `pipeline.load_analysis(path)` and
+`pipeline.save_analysis(path, result)` read and atomically store results.
+`pipeline.analyze_video(url, sensitivity, min_interval, cache)` composes them.
+Either parameter being None selects Auto-tune. Importing the pipeline creates
+no directories; a future CLI can call these functions directly.
 
 ### Audio format
 
@@ -152,6 +168,7 @@ Videos are capped at 20 minutes, and only YouTube URLs are accepted.
 
 ```bash
 uv run pytest
+node --test tests/test_app.cjs
 ```
 
 The tests are offline and need no audio fixtures. To re-check accuracy against a
@@ -165,9 +182,9 @@ uv run python -c "from pathlib import Path; from iskumetri.onsets import analyze
   print(r['params'], r['segment'], len(r['onsets']), min(r['intervals']))"
 ```
 
-Auto-tune should settle on sensitivity 2.0 and a 50 ms min gap, the exercise
-should span about 1.5–35.2 s, there should be around 257 strokes, and no gap
-should be under 40 ms.
+Compare individual onset times in both the slow and fast portions rather than
+asserting one stroke count across audio formats. See docs/validation.md for the
+cached recording comparison and remaining validation limits.
 
 ## Issues
 

@@ -17,7 +17,7 @@
     <input id="url" type="url" required placeholder="https://www.youtube.com/watch?v=…"
            value="https://www.youtube.com/watch?v=NvIDlwzHRGQ" autocomplete="off">
     <label><input id="auto" type="checkbox" checked> Auto-tune</label>
-    <label>Sensitivity <input id="sensitivity" type="number" required min="0.2" max="5" step="0.1" value="1" disabled></label>
+    <label>Sensitivity <input id="sensitivity" type="number" required min="0.2" max="5" step="0.1" value="1"></label>
     <label>Min gap (ms) <input id="mingap" type="number" required min="10" max="500" step="5" value="30" disabled></label>
     <button id="go" type="submit">Analyze</button>
     <output id="status" aria-live="polite"></output>
@@ -25,12 +25,14 @@
 
   <section id="result" hidden>
     <h2 id="title"></h2>
-    <audio id="audio" controls preload="metadata"></audio>
-    <p class="hint">Scroll to zoom · drag to pan · double-click to reset · click a bar to seek · green bars are inferred strokes</p>
+    <div class="video-wrap"><div id="player"></div></div>
+    <p id="player-status" role="status" aria-live="polite"></p>
+    <p class="hint">Scroll to zoom · drag to pan · double-click to reset · click a bar to seek · green outlines mark inferred strokes</p>
+    <p class="hint">Relative volume: quiet <span class="volume-scale" aria-hidden="true"></span> loud. More solid bars indicate louder strokes.</p>
     <div class="view-controls">
       <label><input type="radio" name="mode" value="ms" checked> Duration (ms)</label>
       <label><input type="radio" name="mode" value="bpm"> Tempo (strokes/min)</label>
-      <label>Average over last <input id="smooth" type="number" min="1" max="64" step="1" value="1"> strokes</label>
+      <label>Average around each stroke <input id="smooth" type="number" min="1" max="64" step="1" value="1"> intervals</label>
       <span id="legend" hidden><i class="sw bar"></i> per stroke <i class="sw line"></i> <span id="legend-avg"></span></span>
     </div>
     <div id="chart-wrap">
@@ -40,7 +42,7 @@
     <p id="summary"></p>
     <details>
       <summary>Table view</summary>
-      <table id="table"><thead><tr><th>#</th><th>Time (s)</th><th>Duration (ms)</th><th>Strokes/min</th></tr></thead><tbody></tbody></table>
+      <table id="table"><thead><tr><th>#</th><th>Time (s)</th><th>Duration (ms)</th><th>Strokes/min</th><th>Volume</th></tr></thead><tbody></tbody></table>
     </details>
   </section>
 </main>

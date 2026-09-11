@@ -193,3 +193,56 @@ def test_detect_trims_to_the_exercise_and_reindexes_inferred_strokes() -> None:
     assert len(r["times"]) == len(exercise)
     assert np.allclose(r["times"], exercise, atol=0.03)
     assert r["inferred"] == [20]
+
+
+def test_auto_tune_rejects_slow_shadows_but_keeps_quiet_fast_attacks():
+    # Sharp peaks on a steady flux floor: slow shadows have little prominence,
+    # while the fast attacks soften together rather than alternating with noise.
+    slow = np.arange(1, 8, .6)
+    fast = np.arange(10, 14, .08)
+    times = np.concatenate([slow, np.arange(8, 10, .2), fast])
+    env = np.full(int(15 * SR / HOP), .1)
+    for t in times:
+        env[round(t * SR / HOP)] = 2 if t < 8 else .3
+    shadows = slow + .25
+    for t in shadows:
+        env[round(t * SR / HOP)] = .14
+    result = auto_tune(env)
+    found = result['times']
+    assert all(np.min(abs(found - t)) < HOP / SR for t in times)
+    assert all(np.min(abs(found - t)) > .025 for t in shadows)
+
+
+@pytest.mark.parametrize('length', [0, 1, 2, 10, 40])
+def test_short_silent_envelopes(length):
+    env = np.zeros(length)
+    assert len(auto_tune(env)['times']) == 0
+    assert len(pick_peaks(env)) == 0
+
+
+def test_velocity_tracks_volume_and_is_independent_of_detection():
+    from iskumetri.onsets import stroke_velocities
+    times = np.array([.5, 1, 1.5])
+    y = click_track(times.tolist(), duration=2, gains={.5: .1, 1: .4, 1.5: 1})
+    levels = stroke_velocities(y, times)
+    assert 0 <= levels[0] < levels[1] < levels[2] <= 1
+    assert stroke_velocities(y, times[1:]) == levels[1:]
+    assert stroke_velocities(np.zeros(20), np.array([0])) == [0]
+    assert stroke_velocities(np.array([]), np.array([])) == []
+
+
+def test_analyze_velocity_alignment(monkeypatch):
+    from iskumetri import onsets
+    monkeypatch.setattr(onsets, 'decode', lambda _: click_track(CLICKS))
+    result = onsets.analyze(None)
+    assert len(result['onsets']) == len(result['velocities'])
+    assert len(result['intervals']) == len(result['onsets']) - 1
+    assert all(0 <= v <= 1 for v in result['velocities'])
+
+
+def test_auto_tune_keeps_a_quiet_real_stroke_in_a_ramp():
+    strokes = ramp(.4, .12, 40)
+    soft = strokes[20]
+    env = onset_strength(click_track(strokes, duration=12, gains={soft: .05}))
+    found = auto_tune(env)['times']
+    assert all(np.min(abs(found - t)) < .025 for t in strokes)
