@@ -60,3 +60,5 @@ audio { width: 100%; margin: .5rem 0; }
 table { border-collapse: collapse; font-variant-numeric: tabular-nums; }
 th, td { padding: .2rem .8rem; text-align: right; border-bottom: 1px solid var(--grid); }
 th { color: var(--text-secondary); font-weight: 600; }
+
+.volume-scale { display: inline-block; width: 80px; height: 10px; background: linear-gradient(to right, color-mix(in srgb, var(--series-1) 25%, transparent), var(--series-1)); }

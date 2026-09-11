@@ -108,7 +108,7 @@ function show(d) {
     : `Only ${d.onsets.length} stroke(s) detected over ${fmtTime(d.duration)} — too few to measure a duration. Try raising sensitivity.`;
   $("table").tBodies[0].replaceChildren(...d.intervals.map((iv, i) => {
     const tr = document.createElement("tr");
-    for (const v of [inferred.has(i) ? `${i + 1} ?` : i + 1, d.onsets[i].toFixed(3), (iv * 1000).toFixed(1), (60 / iv).toFixed(1)]) {
+    for (const v of [inferred.has(i) ? `${i + 1} ?` : i + 1, d.onsets[i].toFixed(3), (iv * 1000).toFixed(1), (60 / iv).toFixed(1), `${Math.round(d.velocities[i] * 100)}%`]) {
       const td = document.createElement("td");
       td.textContent = v;
       tr.append(td);
@@ -192,14 +192,21 @@ function draw() {
   // bars: one per stroke, spanning to the next stroke, 2px surface gap, rounded top
   ctx.save();
   ctx.beginPath(); ctx.rect(b.x, b.y, b.w, b.h); ctx.clip();
-  const fill = css("--series-1"), hoverFill = css("--series-1-hover"), inferredFill = css("--series-2");
+  const fill = css("--series-1");
   for (let i = i0; i < i1; i++) {
     const x0 = xOf(on[i], b), x1 = xOf(on[i + 1], b);
     const w = Math.max(1, x1 - x0 - 2);
     const y = yOf(valueOf(i));
-    ctx.fillStyle = i === hover ? hoverFill : inferred.has(i) ? inferredFill : fill;
+    ctx.fillStyle = fill;
+    ctx.globalAlpha = 0.25 + 0.75 * data.velocities[i];
     const r = Math.min(4, w / 2, (b.y + b.h - y) / 2);
     ctx.beginPath(); ctx.roundRect(x0 + 1, y, w, b.y + b.h - y, [r, r, 0, 0]); ctx.fill();
+    ctx.globalAlpha = 1;
+    if (inferred.has(i) || i === hover) {
+      ctx.strokeStyle = i === hover ? css("--text-primary") : css("--series-2");
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
   }
   // Centered average, including the final onset which has no interval bar.
   if (smooth > 1) {
@@ -266,7 +273,7 @@ canvas.addEventListener("pointermove", (e) => {
   if (hover >= 0) {
     const ms = data.intervals[hover] * 1000;
     const avg = smooth > 1 ? windowed(hover, smooth) : NaN;
-    tip.textContent = `#${hover + 1} at ${fmtTime(data.onsets[hover])} · ${ms.toFixed(1)} ms · ${(60000 / ms).toFixed(0)} strokes/min`
+    tip.textContent = `#${hover + 1} at ${fmtTime(data.onsets[hover])} · ${ms.toFixed(1)} ms · ${(60000 / ms).toFixed(0)} strokes/min · volume ${Math.round(data.velocities[hover] * 100)}%${inferred.has(hover) ? " · inferred" : ""}`
       + (Number.isNaN(avg) ? "" : ` · centered ${smooth}: ${fmtValue(avg)}`);
     tip.hidden = false;
     const wrap = canvas.parentElement.getBoundingClientRect();

@@ -57,7 +57,11 @@ runs are served from `cache/` without touching the network.
   graph. Editing **sensitivity** turns Auto-tune off automatically. Untick it to set **sensitivity** (the detection threshold) and **min gap**
   (how close two strokes may be before they are treated as one) by hand. Recordings
   with backing music or talking usually need a lower sensitivity.
-- **Green bars** are strokes the analyzer inferred inside a gap that was too long
+- **Color shade** shows relative recorded volume, from quiet/faint to loud/solid.
+  A 40 ms attack RMS window is normalized to the recording’s maximum 40 ms RMS,
+  with -40 dB mapped to 0% and 0 dB to 100%. This measures recorded sound, not
+  physical stick velocity. Hover or open the table for the numeric value.
+- **Green outlines** mark strokes the analyzer inferred inside a gap that was too long
   for its neighbours, and the table marks them with `?`.
 
 ## How detection works
@@ -122,8 +126,9 @@ video id, so every URL form for the same video (`youtube.com/watch`, `youtu.be`,
 timestamp parameters) hits the same files and needs no network:
 
 - `<id>.webm` or `<id>.m4a` — the audio stream.
-- `<id>.info.json` — title and duration.
-- `<id>.v2.auto.json` or `<id>.v2.s<sensitivity>.w<min gap>.json` — one analysis
+- `<id>.info.json` — title, duration and description. Legacy entries refresh metadata
+  once when online; a failed refresh keeps cached audio usable.
+- `<id>.v3.auto.json` or `<id>.v3.s<sensitivity>.w<min gap>.json` — one analysis
   per parameter choice. The version tag changes when the output shape does.
 
 ### Audio format

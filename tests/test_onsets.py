@@ -218,3 +218,23 @@ def test_short_silent_envelopes(length):
     env = np.zeros(length)
     assert len(auto_tune(env)['times']) == 0
     assert len(pick_peaks(env)) == 0
+
+
+def test_velocity_tracks_volume_and_is_independent_of_detection():
+    from iskumetri.onsets import stroke_velocities
+    times = np.array([.5, 1, 1.5])
+    y = click_track(times.tolist(), duration=2, gains={.5: .1, 1: .4, 1.5: 1})
+    levels = stroke_velocities(y, times)
+    assert 0 <= levels[0] < levels[1] < levels[2] <= 1
+    assert stroke_velocities(y, times[1:]) == levels[1:]
+    assert stroke_velocities(np.zeros(20), np.array([0])) == [0]
+    assert stroke_velocities(np.array([]), np.array([])) == []
+
+
+def test_analyze_velocity_alignment(monkeypatch):
+    from iskumetri import onsets
+    monkeypatch.setattr(onsets, 'decode', lambda _: click_track(CLICKS))
+    result = onsets.analyze(None)
+    assert len(result['onsets']) == len(result['velocities'])
+    assert len(result['intervals']) == len(result['onsets']) - 1
+    assert all(0 <= v <= 1 for v in result['velocities'])

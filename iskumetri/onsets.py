@@ -288,6 +288,28 @@ def auto_tune(env: np.ndarray) -> dict:
                key=lambda r: float(prominence[np.rint(r["times"] * FRAMES_PER_S).astype(int)].sum()))
 
 
+def stroke_velocities(y: np.ndarray, times: np.ndarray) -> list[float]:
+    """Relative 40 ms attack RMS, mapped from -40..0 dB to 0..1.
+
+    The recording's maximum 40 ms RMS is the reference, independent of which
+    strokes were detected. Windows start at the flux onset, allowing for its
+    roughly 20 ms lead, and stop before the following onset.
+    """
+    if not len(y):
+        return [0.0] * len(times)
+    width = min(len(y), round(0.04 * SR))
+    frames = sliding_window_view(y, width)[::HOP]
+    reference = float(np.sqrt(np.max(np.einsum("ij,ij->i", frames, frames) / width)))
+    out = []
+    for i, t in enumerate(times):
+        a = max(0, min(len(y), round(t * SR)))
+        b = min(len(y), a + width, round(times[i + 1] * SR) if i + 1 < len(times) else len(y))
+        rms = float(np.sqrt(np.mean(y[a:b] ** 2))) if b > a else 0.0
+        level = np.clip(1 + 20 * math.log10(rms / reference) / 40, 0, 1) if rms > 0 and reference > 0 else 0.0
+        out.append(round(float(level), 4))
+    return out
+
+
 def validate_params(sensitivity: float | None, min_interval: float | None) -> None:
     for name, value, lo, hi in [("sensitivity", sensitivity, 0.1, 5.0), ("min_interval", min_interval, 0.005, 1.0)]:
         if value is not None and (not math.isfinite(value) or not lo <= value <= hi):
@@ -307,6 +329,7 @@ def analyze(path: Path, sensitivity: float | None = None, min_interval: float | 
         "duration": len(y) / SR,
         "onsets": [round(float(t), 4) for t in times],
         "intervals": [round(float(d), 4) for d in np.diff(times)],
+        "velocities": stroke_velocities(y, times),
         "inferred": r["inferred"],
         "segment": r["segment"],
         "params": r["params"],
