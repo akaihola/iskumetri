@@ -9,13 +9,15 @@ function app() {
     if (!elements.has(id)) elements.set(id, {
       value: id === 'smooth' ? '1' : 'ms', checked: id === 'auto', disabled: false,
       listeners: {}, addEventListener(name, fn) { this.listeners[name] = fn; },
+      pause() {}, load() {}, removeAttribute() {}, currentTime: 0, files: [],
       checkValidity() { return true; }, setAttribute() {}, getContext() { return {}; },
     });
     return elements.get(id);
   }
   const context = vm.createContext({
     document: { getElementById: element, querySelector: () => ({value: 'ms'}), querySelectorAll: () => [] },
-    window: { addEventListener() {}, location: { origin: 'http://localhost' } },
+    URL: {revokeObjectURL() {}, createObjectURL: () => 'blob:audio'},
+    window: { audioAnalysis: {reset() {}, dispose() {}}, addEventListener() {}, location: { origin: 'http://localhost' } },
     ResizeObserver: class { observe() {} }, matchMedia: () => ({addEventListener() {}}),
     requestAnimationFrame() {}, setTimeout() {}, clearTimeout() {},
   });
@@ -93,7 +95,7 @@ test('API load errors leave a visible playback status', () => {
   let script;
   a.context.document.createElement = () => ({remove() {}});
   a.context.document.head = {append: el => {script = el;}};
-  a.run('loadPlayer()');
+  a.run('data = {video_id: "video"}; loadPlayer()');
   assert.equal(script.src, 'https://www.youtube.com/iframe_api');
   script.onerror();
   assert.match(a.element('player-status').textContent, /analysis chart is still usable/);
@@ -118,8 +120,82 @@ test('a failed YouTube script can be retried on the next analysis', () => {
   const scripts = [];
   a.context.document.createElement = () => ({remove() {}});
   a.context.document.head = {append: script => scripts.push(script)};
-  a.run('loadPlayer()');
+  a.run('data = {video_id: "video"}; loadPlayer()');
   scripts[0].onerror();
-  a.run('loadPlayer()');
+  a.run('data = {video_id: "video"}; loadPlayer()');
   assert.equal(scripts.length, 2);
 });
+
+test('local playback follows paused seeks without loading YouTube', () => {
+  const a = app();
+  a.run('draw = () => {}; data = {duration:40}; loadPlayer()');
+  assert.equal(a.run('playerLoading'), false);
+  a.element('audio-player').currentTime = 8;
+  a.run('tick(100)');
+  assert.equal(a.run('playerTime'), 8);
+  a.run('plotBox = () => ({x:0,w:100}); view = {t0:10,t1:20}; drag = {moved:false}');
+  a.element('chart').listeners.pointerup({offsetX:50});
+  assert.equal(a.element('audio-player').currentTime, 15);
+});
+
+test('a replaced file cannot receive a stale analysis result', async () => {
+  const a = app();
+  let resolve;
+  a.context.window.audioAnalysis.analyzeAudio = () => new Promise(r => {resolve = r;});
+  a.element('audio-file').files = [{name:'old.wav'}];
+  a.run('show = () => { throw new Error("stale result displayed"); }');
+  const job = a.element('form').listeners.submit({preventDefault() {}});
+  a.element('audio-file').listeners.change();
+  resolve({});
+  await job;
+  assert.equal(a.element('go').disabled, false);
+  assert.equal(a.element('status').textContent, '');
+});
+
+test('late YouTube readiness does not replace local playback', () => {
+  const a = app();
+  a.context.document.createElement = () => ({});
+  a.context.document.head = {append() {}};
+  a.run('data = {video_id:"old"}; loadPlayer(); data = {title:"local"}');
+  a.context.window.onYouTubeIframeAPIReady();
+  assert.equal(a.run('playerLoading'), false);
+});
+
+function audioHarness() {
+  const workers = [];
+  const context = vm.createContext({
+    window: {}, URL, Float32Array,
+    document: {currentScript: {src:'http://localhost/audio.js'}},
+    setTimeout() {}, clearTimeout() {},
+    OfflineAudioContext: class {
+      async decodeAudioData() {
+        return {duration:1, length:1, numberOfChannels:1, getChannelData: () => new Float32Array([1])};
+      }
+    },
+    Worker: class {
+      constructor() { workers.push(this); }
+      postMessage(message) { this.message = message; }
+      terminate() { this.terminated = true; }
+    },
+  });
+  vm.runInContext(fs.readFileSync('static/audio.js', 'utf8'), context);
+  return {api:context.window.audioAnalysis, workers};
+}
+
+for (const event of ['onerror', 'onmessageerror']) {
+  test(`a retired worker's ${event} cannot cancel the replacement`, async () => {
+    const {api, workers} = audioHarness();
+    const blob = () => ({size:1, arrayBuffer:async () => new ArrayBuffer(1)});
+    const first = api.analyzeAudio(blob(), {}).catch(error => error.message);
+    await new Promise(setImmediate);
+    api.reset();
+    assert.match(await first, /selection changed/);
+    const second = api.analyzeAudio(blob(), {}).catch(error => ({error:error.message}));
+    await new Promise(setImmediate);
+    workers[0][event]();
+    workers[1].onmessage({data:{id:workers[1].message.id, result:{duration:1}}});
+    assert.deepEqual(await second, {duration:1});
+    assert.notEqual(workers[1].terminated, true);
+    api.dispose();
+  });
+}

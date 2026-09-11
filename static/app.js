@@ -1,6 +1,8 @@
 "use strict";
 const $ = (id) => document.getElementById(id);
 const form = $("form"), status = $("status"), go = $("go");
+const audioPlayer = $("audio-player");
+let sourceURL = null, selection = 0;
 const canvas = $("chart"), tip = $("tooltip");
 const ctx = canvas.getContext("2d");
 const PAD = { l: 56, r: 12, t: 12, b: 32 };
@@ -17,7 +19,7 @@ let player = null, playerReady = false, playerVideoId = null, playerTime = null;
 let playerLoading = false, playerTimeout;
 
 function cuePlayer() {
-  if (!playerReady || !data || playerVideoId === data.video_id) return;
+  if (!playerReady || !data?.video_id || playerVideoId === data.video_id) return;
   playerVideoId = data.video_id;
   playerTime = null;
   $("player-status").textContent = "";
@@ -25,20 +27,24 @@ function cuePlayer() {
   player.cueVideoById(data.video_id);
 }
 function loadPlayer() {
+  if (!data?.video_id) return;
   if (playerReady) { cuePlayer(); return; }
   if (playerLoading) return;
   playerLoading = true;
   const fail = () => {
     clearTimeout(playerTimeout);
+    if (!data?.video_id) return;
     $("player-status").textContent = "YouTube playback is unavailable. The analysis chart is still usable.";
   };
   const create = () => {
+    if (!data?.video_id) { playerLoading = false; return; }
     player = new YT.Player("player", {
       playerVars: { playsinline: 1, origin: window.location.origin },
       events: {
         onReady: () => { clearTimeout(playerTimeout); playerReady = true; cuePlayer(); },
         onStateChange: (event) => {
           if (event.data === 1) $("player-status").textContent = "";
+          if (!data?.video_id) return;
           playerTime = player.getCurrentTime();
           draw();
         },
@@ -101,46 +107,62 @@ const fmtClock = (s) => {
   return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`;
 };
 
+function clearSource() {
+  selection++;
+  window.audioAnalysis.reset();
+  audioPlayer.pause();
+  audioPlayer.removeAttribute("src");
+  audioPlayer.load();
+  if (sourceURL) URL.revokeObjectURL(sourceURL);
+  sourceURL = null;
+  if (playerReady) player.pauseVideo();
+  clearTimeout(playerTimeout);
+  data = null;
+  playerTime = null;
+  $("result").hidden = true;
+  $("player-status").textContent = "";
+  status.textContent = "";
+  go.disabled = false;
+}
+$("audio-file").addEventListener("change", clearSource);
+
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
+  const file = $("audio-file").files[0];
+  if (!file) { status.textContent = "Choose an audio file first."; return; }
+  const job = ++selection;
   go.disabled = true;
-  status.textContent = "Downloading audio and detecting strokes… this can take a minute.";
   try {
-    const res = await fetch("/api/analyze", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        url: $("url").value,
-        sensitivity: $("auto").checked ? null : Number($("sensitivity").value),
-        min_interval: $("auto").checked ? null : Number($("mingap").value) / 1000,
-      }),
-    });
-    if (!res.ok) throw new Error(await errorText(res));
-    show(await res.json());
+    const result = await window.audioAnalysis.analyzeAudio(file, {
+      sensitivity: $("auto").checked ? null : Number($("sensitivity").value),
+      min_interval: $("auto").checked ? null : Number($("mingap").value) / 1000,
+    }, message => { if (job === selection) status.textContent = message; });
+    if (job !== selection) return;
+    if (!sourceURL) {
+      sourceURL = URL.createObjectURL(file);
+      audioPlayer.src = sourceURL;
+    }
+    show({title: file.name, ...result});
     status.textContent = "";
   } catch (err) {
-    status.textContent = `Error: ${err.message}`;
+    if (job === selection) status.textContent = `Error: ${err.message}`;
   } finally {
-    go.disabled = false;
+    if (job === selection) go.disabled = false;
   }
 });
-
-// FastAPI reports our own failures as a string, but a schema violation as an
-// array of objects; that array used to reach the user as "[object Object]".
-async function errorText(res) {
-  const detail = await res.json().then((body) => body.detail, () => null);
-  if (typeof detail === "string") return detail;
-  if (Array.isArray(detail)) return detail.map((d) => d.msg ?? JSON.stringify(d)).join("; ");
-  // statusText is empty over HTTP/2, so lead with the status code.
-  return `HTTP ${res.status}${res.statusText ? " " + res.statusText : ""}`;
-}
 
 function show(d) {
   data = d;
   inferred = new Set(d.inferred);
   $("result").hidden = false;
   $("title").textContent = d.title;
-  loadPlayer();
+  audioPlayer.hidden = Boolean(d.video_id);
+  $("video-wrap").hidden = !d.video_id;
+  if (d.video_id) { audioPlayer.pause(); loadPlayer(); }
+  else {
+    if (playerReady) player.pauseVideo();
+    playerTime = audioPlayer.currentTime;
+  }
   resetView();
   const ms = d.intervals.map((x) => x * 1000);
   const seg = d.segment.detected
@@ -328,8 +350,10 @@ canvas.addEventListener("pointermove", (e) => {
   draw();
 });
 canvas.addEventListener("pointerup", (e) => {
-  if (drag && !drag.moved && playerReady) {
-    player.seekTo(Math.max(0, Math.min(data.duration, tOf(e.offsetX, plotBox()))), true);
+  if (drag && !drag.moved && data) {
+    const time = Math.max(0, Math.min(data.duration, tOf(e.offsetX, plotBox())));
+    if (data.video_id && playerReady) player.seekTo(time, true);
+    else if (!data.video_id) audioPlayer.currentTime = time;
     draw();
   }
   drag = null;
@@ -341,13 +365,15 @@ matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
 // Sample the player's clock even when paused: iframe seeks have no seeked event.
 let lastSample = -Infinity, animation;
 function tick(now) {
-  if (playerReady && data && now - lastSample >= 100) {
+  if (data && (!data.video_id || playerReady) && now - lastSample >= 100) {
     lastSample = now;
-    const time = player.getCurrentTime();
+    const time = data.video_id ? player.getCurrentTime() : audioPlayer.currentTime;
     if (time !== playerTime) { playerTime = time; draw(); }
   }
   animation = requestAnimationFrame(tick);
 }
 animation = requestAnimationFrame(tick);
-window.addEventListener("pagehide", () => { cancelAnimationFrame(animation); clearTimeout(playerTimeout); });
+window.addEventListener("pagehide", () => {
+  cancelAnimationFrame(animation); clearSource(); window.audioAnalysis.dispose();
+});
 window.addEventListener("pageshow", () => { cancelAnimationFrame(animation); animation = requestAnimationFrame(tick); });

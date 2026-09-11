@@ -30,6 +30,13 @@ def decode(path: Path, sr: int = SR) -> np.ndarray:
     return np.frombuffer(raw, dtype=np.float32)
 
 
+def _window_blocks(y: np.ndarray, width: int, hop: int):
+    # Slice before making the strided view: its logical size can overflow wasm32
+    # even when the backing samples fit in memory.
+    for start in range(0, len(y) - width + 1, BLOCK * hop):
+        yield sliding_window_view(y[start : start + (BLOCK - 1) * hop + width], width)[::hop]
+
+
 def onset_strength(y: np.ndarray, n_fft: int = N_FFT, hop: int = HOP) -> np.ndarray:
     """Half-wave rectified log spectral flux, one value per hop.
 
@@ -38,13 +45,12 @@ def onset_strength(y: np.ndarray, n_fft: int = N_FFT, hop: int = HOP) -> np.ndar
     """
     pad = n_fft // 2
     y = np.pad(y, (pad, pad))  # copies, so a read-only input from decode() is fine
-    frames = sliding_window_view(y, n_fft)[::hop]
     window = np.hanning(n_fft).astype(np.float32)
 
     flux_blocks: list[np.ndarray] = []
     carried: np.ndarray | None = None  # last log-magnitude frame of the previous block
-    for start in range(0, len(frames), BLOCK):
-        block = frames[start : start + BLOCK] * window
+    for frames in _window_blocks(y, n_fft, hop):
+        block = frames * window
         log_mag = np.log1p(1000.0 * np.abs(np.fft.rfft(block, axis=1)))
         # Carrying the previous block's final frame keeps the difference continuous;
         # without it every block boundary would register as a spurious onset.
@@ -298,8 +304,10 @@ def stroke_velocities(y: np.ndarray, times: np.ndarray) -> list[float]:
     if not len(y):
         return [0.0] * len(times)
     width = min(len(y), round(0.04 * SR))
-    frames = sliding_window_view(y, width)[::HOP]
-    reference = float(np.sqrt(np.max(np.einsum("ij,ij->i", frames, frames) / width)))
+    reference = float(np.sqrt(max(
+        float(np.max(np.einsum("ij,ij->i", frames, frames) / width))
+        for frames in _window_blocks(y, width, HOP)
+    )))
     out = []
     for i, t in enumerate(times):
         a = max(0, min(len(y), round(t * SR)))
@@ -318,7 +326,17 @@ def validate_params(sensitivity: float | None, min_interval: float | None) -> No
 
 def analyze(path: Path, sensitivity: float | None = None, min_interval: float | None = None) -> dict:
     validate_params(sensitivity, min_interval)
-    y = decode(path)
+    return analyze_pcm(decode(path), sensitivity, min_interval)
+
+
+def analyze_pcm(y: np.ndarray, sensitivity: float | None = None, min_interval: float | None = None) -> dict:
+    """Analyze finite mono float32 PCM already sampled at SR (22050 Hz).
+
+    The caller owns decoding, downmixing and resampling. No I/O is performed.
+    """
+    validate_params(sensitivity, min_interval)
+    if not isinstance(y, np.ndarray) or y.ndim != 1 or y.dtype != np.float32 or not np.isfinite(y).all():
+        raise ValueError("PCM must be a finite one-dimensional float32 array at 22050 Hz")
     env = onset_strength(y)
     if sensitivity is None or min_interval is None:
         r = auto_tune(env)
