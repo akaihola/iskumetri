@@ -4,6 +4,10 @@ Rules for TASKS.md usage are at the bottom of the file.
 
 ## Unverified proposals
 
+- [*] Record the embedded YouTube player's audio with getDisplayMedia tab
+  capture (Chromium only, real time, user share picker) and feed the Blob into
+  audioAnalysis.analyzeAudio; needs manual desktop verification.
+
 ## Ordered backlog
 
 ## Scheduled
