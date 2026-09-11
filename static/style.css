@@ -56,7 +56,7 @@ button:disabled { opacity: .6; cursor: progress; }
 #chart { width: 100%; height: 100%; display: block; cursor: crosshair; touch-action: none; }
 #tooltip {
   position: absolute; pointer-events: none; padding: .35rem .55rem; border-radius: 6px;
-  background: var(--surface-2); color: var(--text-primary); font-size: .85rem; white-space: nowrap;
+  background: var(--surface-2); color: var(--text-primary); font-size: .85rem; max-width: calc(100% - 8px); white-space: normal;
   box-shadow: 0 2px 8px rgb(0 0 0 / .2);
 }
 table { border-collapse: collapse; font-variant-numeric: tabular-nums; }
@@ -64,3 +64,5 @@ th, td { padding: .2rem .8rem; text-align: right; border-bottom: 1px solid var(-
 th { color: var(--text-secondary); font-weight: 600; }
 
 .volume-scale { display: inline-block; width: 80px; height: 10px; background: linear-gradient(to right, color-mix(in srgb, var(--series-1) 25%, transparent), var(--series-1)); }
+
+details { overflow-x: auto; }

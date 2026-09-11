@@ -38,7 +38,7 @@ Synthetic regressions separately check weak echoes and quiet fast attacks.
   fast transitions, short/silent envelopes, velocity alignment, cache keys,
   description backfill/fallback and HTTP error mapping.
 - `node --test tests/test_app.cjs` passed. Direct execution with
-  `node tests/test_app.cjs` reports all four tests individually.
+  `node tests/test_app.cjs` reports all six tests individually.
 - A temporary cache using the real AAC recording produced 243 aligned onsets
   and velocities; a repeat via another URL form returned the identical cache.
 - Chromium browser checks passed for native spinner clicks, keyboard arrows,
@@ -59,3 +59,23 @@ Absolute audio/video timing retains the detector's documented roughly 20 ms
 lead and codec-dependent offsets. The player clock is used directly, without
 an arbitrary correction. Physical stroke accuracy beyond the signal comparison
 above has not been independently annotated.
+
+
+## AI review follow-up
+
+Re-ran the detector against the implementation on main using the cached AAC
+recording. Early detections still exactly match manual defaults, and every
+onset at or after 0:09 remains identical to old Auto-tune.
+
+Fixed and regression-tested two recovery defects: returning to Auto-tune with
+an empty/invalid Sensitivity now restores the valid default, and an analysis
+can retry a failed YouTube API script load. Chromium verified a deliberately
+failed first API request followed by a successful second load.
+
+The extended tooltip measured 576 px on a 390 px viewport. It now wraps within
+the chart. The expanded table scrolls within its container. Chromium verified
+both bounds in the dark mobile layout without JavaScript errors.
+
+All 50 Python tests and six JavaScript tests pass. The TASKS.md diff against
+main is empty; the tracker checker again confirms no issue appears under more
+than one heading.

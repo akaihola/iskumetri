@@ -322,7 +322,7 @@ canvas.addEventListener("pointermove", (e) => {
       + (Number.isNaN(avg) ? "" : ` · centered ${smooth}: ${fmtValue(avg)}`);
     tip.hidden = false;
     const wrap = canvas.parentElement.getBoundingClientRect();
-    tip.style.left = `${Math.min(e.offsetX + 14, wrap.width - tip.offsetWidth - 4)}px`;
+    tip.style.left = `${Math.max(4, Math.min(e.offsetX + 14, wrap.width - tip.offsetWidth - 4))}px`;
     tip.style.top = `${Math.max(0, e.offsetY - 36)}px`;
   } else tip.hidden = true;
   draw();
