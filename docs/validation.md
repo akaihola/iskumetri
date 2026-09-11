@@ -211,6 +211,72 @@ the agreed deployment model and was not introduced. Review should treat upload
 analysis as delivered and YouTube extraction/download as unresolved.
 
 
+#### Proof (2026-09-11)
+
+Header-level probes from this sandbox show that the blocker is YouTube's
+CORS policy, not a gap in the browser probe above. The `Origin` request header
+is set by the browser and cannot be changed by page script, so a static
+GitHub Pages origin can never satisfy an allowlist that names only
+youtube.com. Commands, with `$URL` being a `videoplayback` URL from
+`uv run --with 'yt-dlp>=2026.8.19' yt-dlp -g -f 'ba/ba*' <watch URL>`:
+
+```bash
+curl -sS -D - -o body.json -X POST -H "Origin: $ORIGIN" -H "Content-Type: application/json" \
+  "https://www.youtube.com/youtubei/v1/player?prettyPrint=false" \
+  --data '{"videoId":"NvIDlwzHRGQ","context":{"client":{"clientName":"WEB","clientVersion":"2.20260910.01.00"}}}'
+curl -sS -D - -o /dev/null "https://www.youtube.com/youtubei/v1/player?videoId=NvIDlwzHRGQ&callback=cb"
+curl -sS -D - -o /dev/null -r 0-1023 -H "Origin: $ORIGIN" "$URL"
+curl -sS -D - -o /dev/null -X OPTIONS -H "Origin: https://example.github.io" \
+  -H "Access-Control-Request-Method: GET" -H "Access-Control-Request-Headers: range" "$URL"
+```
+
+| Request | `Origin: https://example.github.io` | `Origin: https://www.youtube.com` |
+| --- | --- | --- |
+| `POST youtubei/v1/player`, WEB client | 403, no `Access-Control-Allow-Origin` | 200 JSON, `Vary: Origin` |
+| `GET videoplayback` (itag 251, Opus) | 206, body served, no `Access-Control-Allow-Origin` | 206, `Access-Control-Allow-Origin: https://www.youtube.com`, `Allow-Credentials: true` |
+| `OPTIONS videoplayback` preflight | 400 | not tested |
+| `GET youtubei/v1/player?callback=cb` (JSONP) | 405 | 405 |
+
+The requests in each row were identical apart from the `Origin` header. The
+youtube.com player response was itself `playabilityStatus: UNPLAYABLE` with no
+formats, because a bare WEB client without YouTube's full header set is not a
+working extractor; that row only shows that the gate is origin-based. Without
+a CORS header the browser discards the `videoplayback` body, an `<audio>`
+element playing it would be CORS-tainted for Web Audio and `captureStream`,
+and obtaining the URL already requires the blocked player response. The
+`videoplayback` URLs expire after hours and are bound to the client IP, so
+only headers are recorded here.
+
+DLPro was re-read to answer whether it avoids a proxy. It does not. Its
+`manifest.json` requests the `scripting`, `cookies` and `storage` permissions
+with `*://*/*` host permissions. The pinned HTTP fork first tries an ordinary
+page-context `XMLHttpRequest` after stripping `origin`, `referer`,
+`user-agent` and cookie headers; when a request needs an `Origin` or cookies,
+or the XHR returns status 0 (a CORS failure), it calls `dlpro_proxy_send`.
+`core/worker/xmlproxy_worker.js` posts that request over a message port,
+`core/content/content.js` receives it inside the YouTube tab, and
+`core/content/xmlproxy_content.js` performs the XHR from the youtube.com page
+origin with `withCredentials`, using cookies that `background.js` obtained via
+`chrome.cookies.getAll`. The README states the reason: "origin header can't
+be faked, must be sent from origin". That relay is a proxy running inside the
+user's browser, and content scripts, cookie access and all-site host
+permissions exist only for extensions. No DLPro code was incorporated, so
+the licence question does not arise.
+
+One proxy-free route remains for getting YouTube audio into the static page:
+recording the embedded player in real time with `getDisplayMedia` tab
+capture. It is a recording rather than a download, it takes the video's full
+duration, it requires the user to pick the tab and share its audio in
+Chromium's picker, and Firefox ignores the `audio` option. A headed Chromium
+149 probe under Xvfb with `--auto-select-tab-capture-source-by-title` and
+`--use-fake-ui-for-media-stream` returned a tab video track
+(`web-contents-media-stream://`, only when `displaySurface: 'browser'` was
+requested) but its audio track was Chromium's fake input device with a 500 ms
+beep pattern, not the tab's audio, and headed Chromium could not start inside
+the sandbox at all. The route therefore cannot be verified automatically here
+and is tracked in `TASKS.md` as an unverified proposal, not as a solution.
+
+
 ### AI implementation review
 
 Review reproduced and fixed a worker-lifecycle race: a delayed `error` or
