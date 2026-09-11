@@ -46,13 +46,15 @@ runs are served from `cache/` without touching the network.
   stroke, so either view shows the jitter of every single stroke. The tempo view
   magnifies jitter on fast strokes and flattens it on slow ones, because a fixed
   error in milliseconds is a larger share of a short gap.
-- **Average over last N strokes** overlays a line with the mean of the N gaps
-  ending at each stroke. It is computed from the elapsed time over those N strokes,
-  not as a mean of per-stroke tempos, which would lean towards the fast strokes.
-  Keep N below the number of strokes per subdivision step, or the staircase blurs.
+- **Average around each stroke** uses N intervals around that stroke, requiring
+  N+1 timestamps for a full window. Even N splits equally before and after;
+  odd N has one extra following interval. Edges use only available intervals.
+  Mean duration is elapsed time divided by interval count; tempo is 60 times
+  interval count divided by elapsed seconds, not the average of reciprocals.
+  N=1 hides the overlay. Keep N below a subdivision step to avoid blurring it.
 - **Auto-tune** (default) tries ten sensitivity and min gap combinations and keeps
   the one that reads most like a steady ramp; the chosen values are shown under the
-  graph. Untick it to set **sensitivity** (the detection threshold) and **min gap**
+  graph. Editing **sensitivity** turns Auto-tune off automatically. Untick it to set **sensitivity** (the detection threshold) and **min gap**
   (how close two strokes may be before they are treated as one) by hand. Recordings
   with backing music or talking usually need a lower sensitivity.
 - **Green bars** are strokes the analyzer inferred inside a gap that was too long

@@ -15,23 +15,24 @@ let smooth = 1;        // strokes per averaging window; 1 draws no average line
 
 // Height of bar i in the current unit.
 const valueOf = (i) => mode === "ms" ? data.intervals[i] * 1000 : 60 / data.intervals[i];
-// Same unit, averaged over the n strokes ending with bar i. Computed from the
-// elapsed time, not a mean of per-stroke bpm: the mean of reciprocals would be
-// pulled towards the fastest strokes.
+// N intervals around onset i. Odd N has one extra following interval;
+// clipped edge windows use their actual interval count, without padding.
 function windowed(i, n) {
-  if (i + 1 < n) return NaN;
-  const dt = data.onsets[i + 1] - data.onsets[i + 1 - n];
-  return mode === "ms" ? (dt / n) * 1000 : (60 * n) / dt;
+  const left = Math.floor(n / 2);
+  const a = Math.max(0, i - left), b = Math.min(data.intervals.length, i + n - left);
+  const count = b - a, dt = data.onsets[b] - data.onsets[a];
+  if (count <= 0 || dt <= 0) return NaN;
+  return mode === "ms" ? (dt / count) * 1000 : (60 * count) / dt;
 }
 const unitLabel = () => mode === "ms" ? "ms per stroke" : "strokes per minute";
 const fmtValue = (v) => mode === "ms" ? `${v.toFixed(1)} ms` : `${v.toFixed(0)} strokes/min`;
 
 function syncControls() {
   mode = document.querySelector('input[name="mode"]:checked').value;
-  smooth = Math.max(1, Math.floor(Number($("smooth").value) || 1));
+  smooth = Math.min(64, Math.max(1, Math.floor(Number($("smooth").value) || 1)));
   canvas.setAttribute("aria-label", `Bar chart of ${unitLabel()} over time`);
   $("legend").hidden = smooth < 2;
-  $("legend-avg").textContent = `average over last ${smooth} strokes`;
+  $("legend-avg").textContent = `average around each stroke (${smooth} intervals)`;
   draw();
 }
 for (const el of document.querySelectorAll('input[name="mode"], #smooth')) el.addEventListener("input", syncControls);
@@ -155,6 +156,12 @@ function draw() {
 
   let yMax = 0;
   for (let i = i0; i < i1; i++) yMax = Math.max(yMax, valueOf(i));
+  if (smooth > 1) {
+    for (let i = Math.max(0, i0 - 1); i <= i1; i++) {
+      const v = windowed(i, smooth);
+      if (Number.isFinite(v)) yMax = Math.max(yMax, v);
+    }
+  }
   yMax = (yMax || 1) * 1.08;
   const yOf = (v) => b.y + b.h - (v / yMax) * b.h;
 
@@ -194,15 +201,15 @@ function draw() {
     const r = Math.min(4, w / 2, (b.y + b.h - y) / 2);
     ctx.beginPath(); ctx.roundRect(x0 + 1, y, w, b.y + b.h - y, [r, r, 0, 0]); ctx.fill();
   }
-  // moving average: one point per stroke, at the moment its window completes
+  // Centered average, including the final onset which has no interval bar.
   if (smooth > 1) {
     ctx.strokeStyle = css("--series-2"); ctx.lineWidth = 2; ctx.lineJoin = "round";
     ctx.beginPath();
     let pen = false;
-    for (let i = Math.max(0, i0 - 1); i < i1; i++) {
+    for (let i = Math.max(0, i0 - 1); i <= i1; i++) {
       const v = windowed(i, smooth);
       if (Number.isNaN(v)) continue;
-      const x = xOf(on[i + 1], b), y = yOf(v);
+      const x = xOf(on[i], b), y = yOf(v);
       pen ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
       pen = true;
     }
@@ -260,7 +267,7 @@ canvas.addEventListener("pointermove", (e) => {
     const ms = data.intervals[hover] * 1000;
     const avg = smooth > 1 ? windowed(hover, smooth) : NaN;
     tip.textContent = `#${hover + 1} at ${fmtTime(data.onsets[hover])} · ${ms.toFixed(1)} ms · ${(60000 / ms).toFixed(0)} strokes/min`
-      + (Number.isNaN(avg) ? "" : ` · last ${smooth}: ${fmtValue(avg)}`);
+      + (Number.isNaN(avg) ? "" : ` · centered ${smooth}: ${fmtValue(avg)}`);
     tip.hidden = false;
     const wrap = canvas.parentElement.getBoundingClientRect();
     tip.style.left = `${Math.min(e.offsetX + 14, wrap.width - tip.offsetWidth - 4)}px`;

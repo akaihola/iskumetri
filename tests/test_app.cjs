@@ -39,3 +39,19 @@ test('native sensitivity input switches auto off and enables manual gap', () => 
   a.element('auto').listeners.change();
   assert.equal(a.element('mingap').disabled, true);
 });
+
+test('centered intervals use elapsed time and actual edge counts', () => {
+  const a = app();
+  a.run('data = {onsets: [0,1,3,6,10], intervals: [1,2,3,4]}');
+  assert.equal(a.run('windowed(2,2)'), 2500);
+  assert.equal(a.run('windowed(2,3)'), 3000);
+  assert.equal(a.run('windowed(0,2)'), 1000);
+  assert.equal(a.run('windowed(4,2)'), 4000);
+  assert.equal(a.run('windowed(2,64)'), 2500);
+  assert.equal(a.run('windowed(2,1)'), 3000);
+  a.run('mode="bpm"');
+  assert.equal(a.run('windowed(2,2)'), 24);
+  assert.equal(a.run('windowed(2,3)'), 20);
+  a.run('data = {onsets: [0], intervals: []}');
+  assert.ok(Number.isNaN(a.run('windowed(0,2)')));
+});
