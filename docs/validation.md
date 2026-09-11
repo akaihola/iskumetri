@@ -111,7 +111,7 @@ npm run test:browser
 ISKUMETRI_LONG_TEST=1 npm run test:browser
 ```
 
-The Python suite has 61 tests and the Node UI suite has nine. `TASKS.md`
+The Python suite has 61 tests and the Node UI suite has eleven. `TASKS.md`
 contains no issue entries on this branch or main, so there was no issue to
 move; its diff remains empty and its invariant checker passes. Browser fixtures
 cover clicks, accelerating quiet strokes, weak echoes, FFT block boundaries,
@@ -209,3 +209,28 @@ This evidence blocks the tested browser-only routes, not every conceivable
 future YouTube transport. A privileged extension or server proxy would change
 the agreed deployment model and was not introduced. Review should treat upload
 analysis as delivered and YouTube extraction/download as unresolved.
+
+
+### AI implementation review
+
+Review reproduced and fixed a worker-lifecycle race: a delayed `error` or
+`messageerror` callback from a retired worker could terminate its replacement.
+Callbacks now check worker identity. Both regression cases failed before the
+fix and pass afterward.
+
+Identical-PCM result comparisons now use the production `analysis-worker.js`,
+including its parameter and JSON conversion, rather than obtaining analysis
+results from the separate flux-check worker. The latter only computes the
+intermediate flux envelope. This preserves the original numerical tolerances.
+
+The extraction probe was rerun during review in both engines. Default yt-dlp
+and the alternate Google API host still failed before a usable player response;
+normal fetches showed the same missing CORS headers and opaque no-CORS result.
+The extraction/download requirement remains blocked. The tracker diff is empty,
+its content hash matches `main:TASKS.md`, and `tools/check_tasks_md.py` confirms
+that no issue occurs under more than one heading.
+
+Post-fix review checks passed: 61 Python tests, 11 Node tests, and both browser
+suites including direct production-worker parity, runtime-failure recovery and
+the 1199/1201-second cases. The static-server and FastAPI smoke checks also
+passed again. All probe servers, test servers and browser processes were closed.

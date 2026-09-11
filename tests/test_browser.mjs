@@ -60,11 +60,19 @@ for (const [name, engine] of Object.entries({chromium, firefox})) {
         const got = await page.evaluate(async fixture => {
           const samples = new Float32Array(await (await fetch(`/fixtures/${fixture}.f32`)).arrayBuffer());
           window.parityWorker ??= new Worker('/parity-worker.js', {type:'module'});
-          return await new Promise((resolve, reject) => {
-            parityWorker.onerror = error => reject(Error(error.message));
-            parityWorker.onmessage = ({data}) => data.error ? reject(Error(data.error)) : resolve(data.result);
-            parityWorker.postMessage({samples}, [samples.buffer]);
+          window.productionWorker ??= new Worker('analysis-worker.js', {type:'module'});
+          const request = (worker, params) => new Promise((resolve, reject) => {
+            worker.onerror = error => reject(Error(error.message));
+            worker.onmessage = ({data}) => data.error ? reject(Error(data.error)) : resolve(data.result);
+            const copy = samples.slice();
+            worker.postMessage({id:fixture, samples:copy, params}, [copy.buffer]);
           });
+          const flux = await request(parityWorker);
+          const results = [];
+          for (const params of [{}, {sensitivity:1.0, min_interval:.03}]) {
+            results.push(await request(productionWorker, params));
+          }
+          return {flux, results};
         }, fixture);
         got.results.forEach((result, i) => parity(result, results[i]));
         const bytes = await readFile(join(fixtures, `${fixture}.flux`));
@@ -72,7 +80,7 @@ for (const [name, engine] of Object.entries({chromium, firefox})) {
         assert.equal(got.flux.length, flux.length);
         got.flux.forEach((value, i) => assert.ok(Math.abs(value - flux[i]) < 1e-5, `${fixture} flux ${i}`));
       }
-      await page.evaluate(() => parityWorker.terminate());
+      await page.evaluate(() => { parityWorker.terminate(); productionWorker.terminate(); });
       // The actual production worker receives decoded audio through the UI.
       await page.locator('#auto').uncheck();
       const upload = async filename => {

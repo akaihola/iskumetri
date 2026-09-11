@@ -4,7 +4,7 @@ const ready = (async () => {
   const py = await loadPyodide();
   await py.loadPackage('numpy');
   py.FS.writeFile('onsets.py', await (await fetch('/onsets.py')).text());
-  py.runPython('import json, numpy as np\nfrom onsets import analyze_pcm, onset_strength');
+  py.runPython('import json, numpy as np\nfrom onsets import onset_strength');
   return py;
 })();
 self.onmessage = async ({data: {samples}}) => {
@@ -13,7 +13,7 @@ self.onmessage = async ({data: {samples}}) => {
     py.globals.set('samples_js', samples);
     const result = py.runPython(`
 y = np.asarray(samples_js.to_py(), dtype=np.float32)
-json.dumps({'results': [analyze_pcm(y), analyze_pcm(y, 1.0, .03)], 'flux': onset_strength(y).tolist()})
+json.dumps(onset_strength(y).tolist())
 `);
     py.runPython('del y, samples_js');
     self.postMessage({result: JSON.parse(result)});
