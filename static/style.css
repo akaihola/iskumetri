@@ -66,3 +66,12 @@ th { color: var(--text-secondary); font-weight: 600; }
 .volume-scale { display: inline-block; width: 80px; height: 10px; background: linear-gradient(to right, color-mix(in srgb, var(--series-1) 25%, transparent), var(--series-1)); }
 
 details { overflow-x: auto; }
+
+.file-label { flex: 1 1 100%; flex-wrap: wrap; }
+#audio-file { width: min(100%, 32rem); }
+#file-help { flex-basis: 100%; }
+.source-note { margin-top: 1rem; padding: .75rem 1rem; border: 1px solid var(--grid); border-radius: 6px; color: var(--text-secondary); }
+.source-note summary { cursor: pointer; }
+#audio-player { width: min(100%, 720px); margin: .5rem 0; }
+[hidden] { display: none !important; }
+:focus-visible { outline: 2px solid var(--series-1); outline-offset: 3px; }

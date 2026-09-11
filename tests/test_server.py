@@ -171,3 +171,10 @@ def test_legacy_refresh_does_not_bypass_duration_limit(tmp_path, monkeypatch):
     monkeypatch.setattr(pipeline.yt_dlp, 'YoutubeDL', Downloader)
     with pytest.raises(ValueError, match='limit'):
         pipeline.fetch('NvIDlwzHRGQ', tmp_path)
+
+
+def test_detector_source_is_the_canonical_file():
+    response = server.detector_source()
+    assert response.path == pipeline.ROOT / 'iskumetri' / 'onsets.py'
+    assert response.media_type == 'text/plain'
+    assert response.path.is_file()

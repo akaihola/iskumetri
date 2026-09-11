@@ -36,4 +36,9 @@ def api_audio(video_id: str) -> FileResponse:
     return FileResponse(audio, media_type=pipeline.MEDIA_TYPES[audio.suffix])
 
 
+@app.get("/onsets.py")
+def detector_source() -> FileResponse:
+    return FileResponse(pipeline.ROOT / "iskumetri" / "onsets.py", media_type="text/plain")
+
+
 app.mount("/", StaticFiles(directory=pipeline.ROOT / "static", html=True), name="static")

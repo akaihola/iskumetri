@@ -10,12 +10,14 @@
 <main class="viz-root">
   <header>
     <h1>Iskumetri</h1>
-    <p>Paste a YouTube video of an open–close–open drum roll (slow–fast–slow, also called slow to fast). The app finds the tempo ramp and plots only that part. Each bar is one stroke: its width spans until the next stroke, its height is that duration in milliseconds, or the tempo in strokes per minute.</p>
+    <p>Choose an audio file of an open–close–open drum roll (slow–fast–slow, also called slow to fast). Your audio stays in this browser. The app finds the tempo ramp and plots only that part. Each bar is one stroke: its width spans until the next stroke, its height is that duration in milliseconds, or the tempo in strokes per minute.</p>
   </header>
 
   <form id="form">
-    <input id="url" type="url" required placeholder="https://www.youtube.com/watch?v=…"
-           value="https://www.youtube.com/watch?v=NvIDlwzHRGQ" autocomplete="off">
+    <label class="file-label" for="audio-file">Audio file
+      <input id="audio-file" type="file" accept="audio/*,.wav,.mp3,.m4a,.webm,.ogg,.opus,.flac" required aria-describedby="file-help">
+    </label>
+    <p id="file-help" class="hint">Up to 20 minutes and 128 MiB. WAV and MP3 recommended. The analyzer loads on first use.</p>
     <label><input id="auto" type="checkbox" checked> Auto-tune</label>
     <label>Sensitivity <input id="sensitivity" type="number" required min="0.2" max="5" step="0.1" value="1"></label>
     <label>Min gap (ms) <input id="mingap" type="number" required min="10" max="500" step="5" value="30" disabled></label>
@@ -23,9 +25,15 @@
     <output id="status" aria-live="polite"></output>
   </form>
 
+  <details class="source-note">
+    <summary>YouTube audio extraction</summary>
+    <p>Direct YouTube extraction is unavailable in this static app. Choose a local audio file above to analyze it. No audio is sent to a server.</p>
+  </details>
+
   <section id="result" hidden>
     <h2 id="title"></h2>
-    <div class="video-wrap"><div id="player"></div></div>
+    <audio id="audio-player" controls hidden aria-label="Selected audio"></audio>
+    <div id="video-wrap" class="video-wrap" hidden><div id="player"></div></div>
     <p id="player-status" role="status" aria-live="polite"></p>
     <p class="hint">Scroll to zoom · drag to pan · double-click to reset · click a bar to seek · green outlines mark inferred strokes</p>
     <p class="hint">Relative volume: quiet <span class="volume-scale" aria-hidden="true"></span> loud. More solid bars indicate louder strokes.</p>
@@ -46,6 +54,7 @@
     </details>
   </section>
 </main>
+<script src="audio.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
