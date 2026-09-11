@@ -209,14 +209,20 @@ def find_exercise(
             continue
         r0, r1 = ramp
         lo, hi = s[r0 : r1 + 1].min() - 0.25, s[r0 : r1 + 1].max() + 0.25
-        inside = lambda run: bool(np.all((s[run[0] : run[1] + 1] >= lo) & (s[run[0] : run[1] + 1] <= hi)))
-        for run in merged:  # left neighbours, then right neighbours
+
+        def inside(run: tuple[int, int]) -> bool:
+            part = s[run[0] : run[1] + 1]
+            return bool(np.all((part >= lo) & (part <= hi)))
+
+        # Adjacent runs share their boundary index, so walk outwards from the ramp:
+        # leftwards through the runs in reverse order, rightwards in order.
+        for run in reversed(merged):
             if run[1] == r0 and inside(run):
                 r0 = run[0]
         for run in merged:
             if run[0] == r1 and inside(run):
                 r1 = run[1]
-        if best is None or r1 - r0 > best[1] - best[0]:
+        if best is None or r1 - r0 + 2 > best[1] - best[0]:
             best = (a + r0, a + r1 + 2)
     if best is None:
         return 0, n, False
@@ -258,11 +264,11 @@ def auto_tune(env: np.ndarray) -> dict:
 
     The exercise is by definition a smooth tempo ramp, so the fraction of gaps that
     disagree with their neighbours measures detection errors of either kind. Among
-    results within 0.02 of the best score, more strokes wins: a low sensitivity
+    results within 0.01 of the best score, more strokes wins: a low sensitivity
     that drops every soft stroke also reads as smooth, and this guards against it.
     """
     results = [detect(env, s, w) for s, w in GRID]
-    floor = min(r["score"] for r in results) + 0.02
+    floor = min(r["score"] for r in results) + 0.01
     return max((r for r in results if r["score"] <= floor), key=lambda r: len(r["times"]))
 
 

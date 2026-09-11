@@ -97,14 +97,20 @@ the exercise is by definition a smooth ramp.
    {0.5, 0.7, 1, 1.4, 2} and min gap in {30, 50 ms}. The flux envelope is computed
    once, so each run costs well under a second. Each result is scored by the share
    of gaps outside 0.6–1.6 times their local median plus the share of strokes the
-   segment step had to drop; among results within 0.02 of the best score, the one
+   segment step had to drop; among results within 0.01 of the best score, the one
    with the most strokes wins, because a low sensitivity that skips every soft
    stroke also looks smooth.
 
-On the pre-filled video this turns 216 raw detections into 212 strokes with no
-gap under 40 ms, and the gaps run smoothly from 660 ms down to 75 ms. The roll is
-a double stroke roll, and above about twelve strokes per second the two strokes
-of a double blur inside the 46 ms window, so the last seconds still jitter.
+On the pre-filled video auto-tune settles on sensitivity 2 and a 50 ms min gap,
+turning 270 raw detections into 257 strokes over 1.5–35.2 s with no gap under
+40 ms. The roll is a double stroke roll, which sets the remaining limits: at the
+slow end each hand's bounce is quieter than its stroke, so the gaps alternate
+between stroke-to-bounce (about 230 ms) and bounce-to-next-hand (about 420 ms),
+and where a bounce falls under the threshold the plot shows the hand period, twice
+the stroke period. Above about twelve strokes per second the two strokes of a
+double blur inside the 46 ms window, so the last seconds still jitter. At
+sensitivity 1 the bounces are skipped throughout and the graph is a smooth ramp
+from 660 ms to 75 ms, with half the strokes at the slow end.
 
 Detection quality depends on the recording. A clean drum or pad track resolves
 down to 32nd notes; a track with backing music, talking or a metronome will pick
@@ -159,6 +165,6 @@ uv run python -c "from pathlib import Path; from iskumetri.onsets import analyze
   print(r['params'], r['segment'], len(r['onsets']), min(r['intervals']))"
 ```
 
-Auto-tune should settle on sensitivity 1.0 and a 50 ms min gap, the exercise
-should span about 1.7–34.9 s, there should be around 210 strokes, and no gap
+Auto-tune should settle on sensitivity 2.0 and a 50 ms min gap, the exercise
+should span about 1.5–35.2 s, there should be around 257 strokes, and no gap
 should be under 40 ms.

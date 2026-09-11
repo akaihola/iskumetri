@@ -145,6 +145,18 @@ def test_find_exercise_returns_the_ramp_between_unrelated_playing() -> None:
     assert (i0, i1) == (len(intro), len(intro) + len(exercise))
 
 
+def test_find_exercise_keeps_a_jittery_held_tempo_on_both_sides_of_the_ramp() -> None:
+    """Runs that wobble inside the ramp's tempo range are the exercise too, however many."""
+    wobble = [0.3] * 5 + [0.45] * 5 + [0.3] * 5 + [0.45] * 5  # four reversals, all in range
+    gaps = [*wobble, *np.geomspace(0.5, 0.15, 30), *wobble]
+    times = np.concatenate([[0.5], 0.5 + np.cumsum(gaps)])
+
+    i0, i1, detected = find_exercise(times)
+
+    assert detected
+    assert (i0, i1) == (0, len(times))
+
+
 def test_find_exercise_falls_back_to_everything_without_a_ramp() -> None:
     steady = np.arange(0.5, 10.0, 0.25)
 
