@@ -51,7 +51,7 @@ function loadPlayer() {
   window.onYouTubeIframeAPIReady = create;
   const script = document.createElement("script");
   script.src = "https://www.youtube.com/iframe_api";
-  script.onerror = fail;
+  script.onerror = () => { playerLoading = false; script.remove(); fail(); };
   document.head.append(script);
 }
 
@@ -80,6 +80,9 @@ function syncControls() {
 for (const el of document.querySelectorAll('input[name="mode"], #smooth')) el.addEventListener("input", syncControls);
 syncControls();  // browsers may restore the controls' values on reload
 function syncAuto() {
+  if ($("auto").checked && !$("sensitivity").checkValidity()) {
+    $("sensitivity").value = $("sensitivity").defaultValue;
+  }
   $("mingap").disabled = $("auto").checked;
 }
 $("auto").addEventListener("change", syncAuto);

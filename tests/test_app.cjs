@@ -9,7 +9,7 @@ function app() {
     if (!elements.has(id)) elements.set(id, {
       value: id === 'smooth' ? '1' : 'ms', checked: id === 'auto', disabled: false,
       listeners: {}, addEventListener(name, fn) { this.listeners[name] = fn; },
-      setAttribute() {}, getContext() { return {}; },
+      checkValidity() { return true; }, setAttribute() {}, getContext() { return {}; },
     });
     return elements.get(id);
   }
@@ -91,10 +91,35 @@ test('player waits for readiness, retains playback, and follows paused seeks', (
 test('API load errors leave a visible playback status', () => {
   const a = app();
   let script;
-  a.context.document.createElement = () => ({});
+  a.context.document.createElement = () => ({remove() {}});
   a.context.document.head = {append: el => {script = el;}};
   a.run('loadPlayer()');
   assert.equal(script.src, 'https://www.youtube.com/iframe_api');
   script.onerror();
   assert.match(a.element('player-status').textContent, /analysis chart is still usable/);
+});
+
+
+test('re-enabling auto restores an invalid manual sensitivity', () => {
+  const a = app();
+  const sensitivity = a.element('sensitivity');
+  sensitivity.value = '';
+  sensitivity.defaultValue = '1';
+  sensitivity.checkValidity = () => false;
+  sensitivity.listeners.input();
+  a.element('auto').checked = true;
+  a.element('auto').listeners.change();
+  assert.equal(sensitivity.value, '1');
+  assert.equal(a.element('auto').checked, true);
+});
+
+test('a failed YouTube script can be retried on the next analysis', () => {
+  const a = app();
+  const scripts = [];
+  a.context.document.createElement = () => ({remove() {}});
+  a.context.document.head = {append: script => scripts.push(script)};
+  a.run('loadPlayer()');
+  scripts[0].onerror();
+  a.run('loadPlayer()');
+  assert.equal(scripts.length, 2);
 });
