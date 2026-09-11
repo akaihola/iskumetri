@@ -40,6 +40,8 @@ button { background: var(--series-1); color: #fff; border-color: transparent; cu
 button:disabled { opacity: .6; cursor: progress; }
 #status { flex-basis: 100%; min-height: 1.4em; }
 audio { width: 100%; margin: .5rem 0; }
+.view-controls { display: flex; flex-wrap: wrap; gap: .4rem 1.2rem; align-items: center; margin: .5rem 0; }
+.view-controls label input[type="radio"] { width: auto; }
 #chart-wrap { position: relative; height: 420px; }
 #chart { width: 100%; height: 100%; display: block; cursor: crosshair; touch-action: none; }
 #tooltip {

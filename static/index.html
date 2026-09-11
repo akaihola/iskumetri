@@ -10,7 +10,7 @@
 <main class="viz-root">
   <header>
     <h1>Iskumetri</h1>
-    <p>Paste a YouTube video of a drummers' pyramid exercise. Each bar is one stroke: its width spans until the next stroke, its height is that duration in milliseconds.</p>
+    <p>Paste a YouTube video of a drummers' pyramid exercise. Each bar is one stroke: its width spans until the next stroke, its height is that duration in milliseconds, or the tempo in strokes per minute.</p>
   </header>
 
   <form id="form">
@@ -26,6 +26,10 @@
     <h2 id="title"></h2>
     <audio id="audio" controls preload="metadata"></audio>
     <p class="hint">Scroll to zoom · drag to pan · double-click to reset · click a bar to seek</p>
+    <div class="view-controls">
+      <label><input type="radio" name="mode" value="ms" checked> Duration (ms)</label>
+      <label><input type="radio" name="mode" value="bpm"> Tempo (strokes/min)</label>
+    </div>
     <div id="chart-wrap">
       <canvas id="chart" role="img" aria-label="Bar chart of beat durations over time"></canvas>
       <div id="tooltip" role="tooltip" hidden></div>
