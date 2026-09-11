@@ -1,12 +1,13 @@
 # Iskumetri
 
-A web app that listens to a drummer's open–close–open roll on YouTube and draws
-the duration of every stroke as a zoomable bar graph.
+A browser app that finds drum strokes in local audio and draws their durations
+as a zoomable bar graph. Audio stays on your device. The existing NumPy detector
+runs in a Pyodide worker, with browser decoding and playback.
 
-Paste a YouTube URL and the server pulls the audio, finds the exercise, finds
-each stroke in it, and plots one bar per stroke: the bar spans until the next
-stroke and its height is that gap in milliseconds. A roll that speeds up then
-reads as a falling ramp.
+YouTube extraction from a plain static page is currently blocked by browser
+network restrictions. The app accepts local files independently. The native
+Python API still supports YouTube downloads. See [browser validation](docs/validation.md#browser-support)
+for the extraction probe and its limits.
 
 ## The exercise
 
@@ -22,28 +23,49 @@ it as well, since a staircase is also a monotone ramp.
 [pas]: https://pas.org/rudiments/
 [ocō]: https://en.wikipedia.org/wiki/Open,_closed,_open
 
-## Running it
+## Running the static app
 
-Requires [uv](https://docs.astral.sh/uv/) and `ffmpeg` on the path.
+```bash
+python3 tools/build_static.py
+python3 -m http.server --directory dist 8000
+```
+
+Open <http://127.0.0.1:8000/> and choose an audio file. Deploy the contents of
+`dist/` to any static HTTP(S) host, including a subdirectory. No Python application
+server or FFmpeg is needed by visitors. The first analysis loads pinned Pyodide
+0.29.3 and NumPy assets from jsDelivr, so an internet connection is required.
+This is not an offline-first app.
+
+Files are limited to 128 MiB and 20 minutes. WAV and MP3 are recommended;
+WebM/Opus, AAC/M4A, Ogg and FLAC support depends on the browser. Unsupported or
+corrupt files produce a visible error. Decoding resamples to mono 22.05 kHz;
+stereo uses FFmpeg's equal-power downmix, while files with more than two channels
+use their channel average and are not covered by native downmix parity checks.
+Parameter changes reuse decoded samples. Selecting another file releases the
+old audio and cancels its analysis. Long recordings can still use substantial
+memory because browser decoding expands the whole file before the duration check.
+
+## Native API
+
+For the original server-side YouTube pipeline, install `uv` and `ffmpeg`:
 
 ```bash
 uv sync
 uv run uvicorn iskumetri.server:app --port 8000
 ```
 
-Open <http://127.0.0.1:8000/>. A slow-to-fast double stroke roll is pre-filled,
-so pressing Analyze is enough to see it work. The first run on a video downloads
-and analyses it, which takes about 15 seconds for 10 minutes of audio; repeat
-runs are served from `cache/` without touching the network.
+The server serves the same browser upload UI and canonical detector source.
+Existing `POST /api/analyze` and `GET /api/audio/{video_id}` remain available to
+API callers, with the same caching and parameter behavior. The static UI never
+uses these endpoints as an automatic fallback for YouTube extraction.
 
 ## Reading the graph
 
 - **Scroll** to zoom about the cursor, **drag** to pan, **double-click** to reset.
 - **Hover** a bar for its stroke number, timestamp, duration and strokes per minute.
-- **Click** a bar to seek the embedded YouTube video there. Its playback clock drives the chart
-  playhead, including seeks while paused. Reanalyzing the same video preserves
-  playback. YouTube embedding requires network access and may be disabled by
-  the uploader; the chart remains usable if playback fails.
+- **Click** a bar to seek the selected audio. Its playback clock drives the chart
+  playhead, including seeks while paused. Reanalyzing the same file preserves
+  playback. Controls use the original recording timeline.
 - **Duration / Tempo** switches the bar height between the gap in milliseconds and
   its reciprocal in strokes per minute. Both come from the time since the previous
   stroke, so either view shows the jitter of every single stroke. The tempo view
@@ -69,14 +91,14 @@ runs are served from `cache/` without touching the network.
 
 ## How detection works
 
-`iskumetri/onsets.py` decodes the audio to mono at 22.05 kHz and computes
+The browser decodes audio to mono at 22.05 kHz. `iskumetri/onsets.py` computes
 half-wave rectified log spectral flux, which spikes when broadband energy
 appears, as it does on a drum attack. Peaks above an adaptive local threshold
 become strokes, and the graph plots the gaps between them.
 
-The transform runs in float32 blocks rather than one whole-signal allocation, so
-peak memory stays near 0.3 GB for a 10-minute clip instead of scaling with
-length.
+The transform runs in float32 blocks rather than one whole-signal allocation.
+Native measurements put peak memory near 0.3 GB for a 10-minute clip. Browser
+memory also includes decoded audio and the WASM runtime; its peak was not measured.
 
 Absolute stroke times run 14 to 19 ms early, because a 46 ms analysis window
 overlapping an attack lifts the flux slightly before the attack itself. That lead
@@ -123,7 +145,7 @@ up strokes that are not there, which is what the manual controls are for.
 
 ## Cache
 
-Everything lives in `cache/` (or `$ISKUMETRI_CACHE`), keyed by the 11-character
+Native API downloads and results live in `cache/` (or `$ISKUMETRI_CACHE`), keyed by the 11-character
 video id, so every URL form for the same video (`youtube.com/watch`, `youtu.be`,
 `m.`, `music.`, `shorts/`, `embed/`, `live/`, with or without playlist or
 timestamp parameters) hits the same files and needs no network:
@@ -137,7 +159,9 @@ timestamp parameters) hits the same files and needs no network:
 ### Reusable stages
 
 `iskumetri.pipeline.fetch(video_id, cache)` downloads audio and caches metadata.
-`iskumetri.onsets.analyze(audio_path, sensitivity, min_interval)` analyzes local
+`iskumetri.onsets.analyze_pcm(samples, sensitivity, min_interval)` accepts finite,
+one-dimensional float32 PCM at 22.05 kHz. This is the shared browser/native entry
+point. `iskumetri.onsets.analyze(audio_path, sensitivity, min_interval)` analyzes local
 media without HTTP or storage. `pipeline.load_analysis(path)` and
 `pipeline.save_analysis(path, result)` read and atomically store results.
 `pipeline.analyze_video(url, sensitivity, min_interval, cache)` composes them.
@@ -171,8 +195,25 @@ uv run pytest
 node --test tests/test_app.cjs
 ```
 
-The tests are offline and need no audio fixtures. To re-check accuracy against a
-real recording:
+The Python and Node UI tests are offline and need no audio fixtures. Browser
+checks generate PCM and encoded files using the Python helpers and FFmpeg, then
+compare native results with Chromium and Firefox. They need network access for
+the pinned runtime assets:
+
+```bash
+npm ci
+npx playwright install chromium firefox
+npm run test:browser
+```
+
+The browser runner starts and closes its own temporary HTTP server. On systems
+with managed browsers, set `CHROMIUM_EXECUTABLE_PATH` and
+`FIREFOX_EXECUTABLE_PATH` to their executables. Set `ISKUMETRI_LONG_TEST=1` to
+include a near-20-minute recording check. The separate, network-dependent
+YouTube feasibility probe runs with `node tools/probe_browser_extraction.mjs`.
+It does not relax browser security or proxy requests.
+
+To re-check accuracy against a real recording:
 
 ```bash
 uv run yt-dlp -f "bestaudio[abr<=100][asr>=44000]/worstaudio[asr>=44000]/bestaudio" \
