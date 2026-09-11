@@ -134,3 +134,40 @@ def test_failed_json_write_preserves_previous_result(tmp_path):
         pipeline.save_analysis(path, {'bad': float('nan')})
     assert pipeline.load_analysis(path) == {'onsets': [1]}
     assert not list(tmp_path.glob('*.partial'))
+
+
+@pytest.mark.parametrize('duration', [37, pipeline.MAX_DURATION + 1])
+def test_download_checks_duration_before_writing_audio(tmp_path, monkeypatch, duration):
+    calls = []
+    class Downloader:
+        def __init__(self, opts): pass
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+        def extract_info(self, url, download):
+            return {'title': 'Roll', 'duration': duration, 'description': 'Practice'}
+        def download(self, urls):
+            calls.append(urls)
+            (tmp_path / 'NvIDlwzHRGQ.webm').touch()
+    monkeypatch.setattr(pipeline.yt_dlp, 'YoutubeDL', Downloader)
+    if duration > pipeline.MAX_DURATION:
+        with pytest.raises(ValueError, match='limit'):
+            pipeline.fetch('NvIDlwzHRGQ', tmp_path)
+        assert not calls
+    else:
+        assert pipeline.fetch('NvIDlwzHRGQ', tmp_path)[0] == 'Roll'
+        assert len(calls) == 1
+        assert pipeline.load_analysis(tmp_path / 'NvIDlwzHRGQ.info.json')['description'] == 'Practice'
+
+
+def test_legacy_refresh_does_not_bypass_duration_limit(tmp_path, monkeypatch):
+    (tmp_path / 'NvIDlwzHRGQ.webm').touch()
+    pipeline.save_analysis(tmp_path / 'NvIDlwzHRGQ.info.json', {'title': 'Roll', 'duration': 37})
+    class Downloader:
+        def __init__(self, opts): pass
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+        def extract_info(self, *args, **kwargs):
+            return {'duration': pipeline.MAX_DURATION + 1}
+    monkeypatch.setattr(pipeline.yt_dlp, 'YoutubeDL', Downloader)
+    with pytest.raises(ValueError, match='limit'):
+        pipeline.fetch('NvIDlwzHRGQ', tmp_path)

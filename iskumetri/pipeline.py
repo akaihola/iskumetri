@@ -4,15 +4,15 @@ from __future__ import annotations
 
 import json
 import os
-import tempfile
 import re
+import tempfile
 from pathlib import Path
 
 import yt_dlp
 from yt_dlp.extractor.youtube import YoutubeIE
 from yt_dlp.utils import ExtractorError
 
-from iskumetri.onsets import analyze
+from iskumetri.onsets import analyze, validate_params
 
 ROOT = Path(__file__).resolve().parent.parent
 CACHE = Path(os.environ.get("ISKUMETRI_CACHE", ROOT / "cache"))
@@ -25,6 +25,7 @@ MAX_DURATION = 20 * 60  # s; analysis cost and disk use scale with length
 FORMAT = "bestaudio[abr<=100][asr>=44000]/worstaudio[asr>=44000]/bestaudio"
 # Bump when the analysis output changes shape, so stale results are not served.
 RESULT_VERSION = "v3"
+
 
 def video_id_from_url(url: str) -> str:
     """Resolve youtube.com, youtu.be, shorts, embed, m. and music. URLs offline."""
@@ -79,6 +80,7 @@ def fetch(video_id: str, cache: Path = CACHE) -> tuple[str, Path]:
         "noprogress": True,  # otherwise the progress bar floods the server log
         "cachedir": str(cache / "yt-dlp"),  # the default ~/.cache may be read-only
     }
+    duration = 0
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=False)
@@ -96,6 +98,8 @@ def fetch(video_id: str, cache: Path = CACHE) -> tuple[str, Path]:
             if audio is None:
                 raise RuntimeError("Download produced no usable audio file")
     except (yt_dlp.utils.DownloadError, ValueError):
+        if duration > MAX_DURATION:
+            raise
         if audio is not None and cached is not None:
             return cached["title"], audio
         raise
@@ -108,8 +112,6 @@ def analyze_video(
     cache: Path = CACHE,
 ) -> dict:
     """Compose the independent stages for the web app or a future CLI."""
-    from iskumetri.onsets import validate_params
-
     validate_params(sensitivity, min_interval)
     video_id = video_id_from_url(url)
     title, audio = fetch(video_id, cache)
