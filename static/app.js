@@ -37,9 +37,13 @@ function syncControls() {
 for (const el of document.querySelectorAll('input[name="mode"], #smooth')) el.addEventListener("input", syncControls);
 syncControls();  // browsers may restore the controls' values on reload
 function syncAuto() {
-  for (const id of ["sensitivity", "mingap"]) $(id).disabled = $("auto").checked;
+  $("mingap").disabled = $("auto").checked;
 }
 $("auto").addEventListener("change", syncAuto);
+$("sensitivity").addEventListener("input", () => {
+  $("auto").checked = false;
+  syncAuto();
+});
 syncAuto();
 
 const css = (name) => getComputedStyle(document.querySelector(".viz-root")).getPropertyValue(name).trim();
