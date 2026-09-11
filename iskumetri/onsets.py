@@ -59,17 +59,20 @@ def adaptive_threshold(env: np.ndarray, sensitivity: float) -> tuple[np.ndarray,
     """Local mean of the envelope over 150 ms, and the margin a peak must clear."""
     win = int(0.15 * FRAMES_PER_S)
     kernel = np.ones(2 * win + 1) / (2 * win + 1)
-    return np.convolve(env, kernel, mode="same"), 0.25 * float(np.std(env)) / sensitivity
+    if not len(env):
+        return env.copy(), 0.0
+    return np.convolve(np.pad(env, win), kernel, mode="valid"), 0.25 * float(np.std(env)) / sensitivity
 
 
 def pick_peaks(
     env: np.ndarray, hop: int = HOP, sr: int = SR,
     sensitivity: float = 1.0, min_interval: float = 0.03,
+    prominence_floor: np.ndarray | None = None,
 ) -> np.ndarray:
     """Return onset times (s). Peaks must exceed a local adaptive threshold."""
     frames_per_s = sr / hop
     local_mean, delta = adaptive_threshold(env, sensitivity)
-    thresh = local_mean + delta
+    thresh = local_mean + (delta if prominence_floor is None else np.maximum(delta, prominence_floor))
     # Round up: truncating let peaks exactly min_interval apart through.
     wait = max(1, math.ceil(min_interval * frames_per_s))
     is_peak = (env[1:-1] > env[:-2]) & (env[1:-1] >= env[2:]) & (env[1:-1] > thresh[1:-1])
@@ -119,6 +122,7 @@ def clean_outliers(times: np.ndarray, env: np.ndarray, ratio: float = 0.5) -> np
 
 def fill_gaps(
     times: np.ndarray, env: np.ndarray, sensitivity: float = 1.0, ratio: float = 1.7,
+    prominence_floor: np.ndarray | None = None,
 ) -> tuple[np.ndarray, list[int]]:
     """Recover one missed stroke inside any gap longer than ratio × the local median.
 
@@ -140,7 +144,8 @@ def fill_gaps(
                 k = a + int(np.argmax(env[a:b]))
                 tt = k / FRAMES_PER_S
                 lo, hi = REGULAR[0] * lm[i], REGULAR[1] * lm[i]
-                if env[k] > local_mean[k] + delta / 3 and lo < tt - times[i] < hi and lo < times[i + 1] - tt < hi:
+                margin = delta / 3 if prominence_floor is None else max(delta / 3, prominence_floor[k])
+                if env[k] > local_mean[k] + margin and lo < tt - times[i] < hi and lo < times[i + 1] - tt < hi:
                     out.append(tt)
                     inferred.append(len(out) - 1)
         out.append(float(times[i + 1]))
@@ -237,10 +242,13 @@ def outlier_fraction(times: np.ndarray) -> float:
     return float(np.mean((ratio < REGULAR[0]) | (ratio > REGULAR[1])))
 
 
-def detect(env: np.ndarray, sensitivity: float, min_interval: float) -> dict:
+def detect(
+    env: np.ndarray, sensitivity: float, min_interval: float,
+    prominence_floor: np.ndarray | None = None,
+) -> dict:
     """Pick, clean, fill and trim to the exercise for one parameter pair."""
-    raw = pick_peaks(env, sensitivity=sensitivity, min_interval=min_interval)
-    filled, inferred = fill_gaps(clean_outliers(raw, env), env, sensitivity)
+    raw = pick_peaks(env, sensitivity=sensitivity, min_interval=min_interval, prominence_floor=prominence_floor)
+    filled, inferred = fill_gaps(clean_outliers(raw, env), env, sensitivity, prominence_floor=prominence_floor)
     i0, i1, detected = find_exercise(filled)
     times = filled[i0:i1]
     return {
@@ -260,16 +268,24 @@ def detect(env: np.ndarray, sensitivity: float, min_interval: float) -> dict:
 
 
 def auto_tune(env: np.ndarray) -> dict:
-    """Run the grid and keep the most strokes among the near-smoothest results.
+    """Tune with local attack evidence so quiet ringing cannot win by count.
 
-    The exercise is by definition a smooth tempo ramp, so the fraction of gaps that
-    disagree with their neighbours measures detection errors of either kind. Among
-    results within 0.01 of the best score, more strokes wins: a low sensitivity
-    that drops every soft stroke also reads as smooth, and this guards against it.
+    Require 5% of the strongest nearby prominence, within one second either
+    side. This floor follows the signal as attacks soften at high speed. Apply
+    it to gap recovery too, otherwise recovery reinstates rejected shadows.
     """
-    results = [detect(env, s, w) for s, w in GRID]
-    floor = min(r["score"] for r in results) + 0.01
-    return max((r for r in results if r["score"] <= floor), key=lambda r: len(r["times"]))
+    mean, _ = adaptive_threshold(env, 1.0)
+    prominence = np.maximum(env - mean, 0)
+    radius = int(FRAMES_PER_S)
+    floor = 0.05 * np.max(sliding_window_view(np.pad(prominence, radius), 2 * radius + 1), axis=1) if len(env) else env
+    results = [detect(env, s, w, floor) for s, w in GRID]
+    supported = [r for r in results if len(r["times"]) >= 2]
+    if not supported:
+        return max(results, key=lambda r: len(r["times"]))
+    best_score = min(r["score"] for r in supported) + 0.01
+    # Evidence, rather than number of peaks, breaks near-ties in regularity.
+    return max((r for r in supported if r["score"] <= best_score),
+               key=lambda r: float(prominence[np.rint(r["times"] * FRAMES_PER_S).astype(int)].sum()))
 
 
 def validate_params(sensitivity: float | None, min_interval: float | None) -> None:

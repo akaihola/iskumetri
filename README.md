@@ -93,24 +93,20 @@ the exercise is by definition a smooth ramp.
    kept. Only that part is plotted; intros, wrap-ups and other playing separated
    from the roll by a pause are dropped. Without a ramp, the whole recording is
    shown and the summary says so.
-4. In auto-tune mode, steps 1–3 run for every combination of sensitivity in
-   {0.5, 0.7, 1, 1.4, 2} and min gap in {30, 50 ms}. The flux envelope is computed
-   once, so each run costs well under a second. Each result is scored by the share
-   of gaps outside 0.6–1.6 times their local median plus the share of strokes the
-   segment step had to drop; among results within 0.01 of the best score, the one
-   with the most strokes wins, because a low sensitivity that skips every soft
-   stroke also looks smooth.
+4. Auto-tune runs the sensitivity/min-gap grid with an additional local prominence
+   floor: a candidate must clear 5% of the strongest prominence within one second
+   either side. The floor follows the quieter attacks in fast passages, and also
+   applies to gap recovery. Among near-equal regularity scores, summed attack
+   evidence breaks ties. Empty detections cannot beat supported results.
 
-On the pre-filled video auto-tune settles on sensitivity 2 and a 50 ms min gap,
-turning 270 raw detections into 257 strokes over 1.5–35.2 s with no gap under
-40 ms. The roll is a double stroke roll, which sets the remaining limits: at the
-slow end each hand's bounce is quieter than its stroke, so the gaps alternate
-between stroke-to-bounce (about 230 ms) and bounce-to-next-hand (about 420 ms),
-and where a bounce falls under the threshold the plot shows the hand period, twice
-the stroke period. Above about twelve strokes per second the two strokes of a
-double blur inside the 46 ms window, so the last seconds still jitter. At
-sensitivity 1 the bounces are skipped throughout and the graph is a smooth ramp
-from 660 ms to 75 ms, with half the strokes at the slow end.
+On the cached AAC version of the pre-filled video, this removes 14 weak early
+peaks from the old 257-stroke result. The 14 retained strokes before 0:09 exactly
+match manual sensitivity 1 / 30 ms, and all 131 old Auto-tune detections from
+0:25 remain unchanged. The result has 243 strokes over 1.701–35.213 s using
+sensitivity 2 / 50 ms. This comparison demonstrates the reported slow/fast
+tradeoff is addressed; it is not a hand-labelled ground truth for every stroke.
+Very quiet intentional strokes can still resemble ringing, and recordings with
+abrupt changes in volume need particular care.
 
 Detection quality depends on the recording. A clean drum or pad track resolves
 down to 32nd notes; a track with backing music, talking or a metronome will pick
@@ -165,9 +161,9 @@ uv run python -c "from pathlib import Path; from iskumetri.onsets import analyze
   print(r['params'], r['segment'], len(r['onsets']), min(r['intervals']))"
 ```
 
-Auto-tune should settle on sensitivity 2.0 and a 50 ms min gap, the exercise
-should span about 1.5–35.2 s, there should be around 257 strokes, and no gap
-should be under 40 ms.
+Compare individual onset times in both the slow and fast portions rather than
+asserting one stroke count across audio formats. See docs/validation.md for the
+cached recording comparison and remaining validation limits.
 
 ## Issues
 
