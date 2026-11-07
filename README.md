@@ -1,5 +1,7 @@
 # Iskumetri
 
+> This is a prototype developed using AI coding agents and not intended for production use.
+
 A browser app that finds drum strokes in local audio and draws their durations
 as a zoomable bar graph. Audio stays on your device. The existing NumPy detector
 runs in a Pyodide worker, with browser decoding and playback.
